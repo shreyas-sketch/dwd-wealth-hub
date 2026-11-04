@@ -39,7 +39,7 @@ export function XrayChip({ label, score }) {
 export function CoinBadge({ symbol, size = 36 }) {
   const s = String(symbol || "?").toUpperCase();
   return (
-    <span className="inline-grid place-items-center rounded-full bg-bz-gold-tint text-bz-gold-deep font-bzmono font-semibold shrink-0"
+    <span className="inline-grid place-items-center rounded-full bg-bz-gold-tint text-bz-gold-deep font-bzdisplay font-bold shrink-0"
       style={{ width: size, height: size, fontSize: size * 0.3 }} aria-hidden>
       {s.slice(0, s.length > 4 ? 3 : 4)}
     </span>

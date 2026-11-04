@@ -121,3 +121,8 @@ export function daysUntil(iso) {
 export const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 export const VENUE_NAME = { kucoin: "KuCoin", binance: "Binance" };
 export const venueName = (v) => (v ? String(v).split(" · ").map((x) => VENUE_NAME[x] || x).join(" · ") : "—");
+
+// "Wednesday, 4 November" for today in India.
+export function istLongToday() {
+  return new Intl.DateTimeFormat("en-IN", { timeZone: IST, weekday: "long", day: "numeric", month: "long" }).format(new Date());
+}
