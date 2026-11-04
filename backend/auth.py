@@ -158,6 +158,44 @@ async def me(user: dict = Depends(get_current_user)):
     return {"user": public_user(user), "plan": await plans.plan_info(_db(), user)}
 
 
+@router.get("/session")
+async def session(request: Request, response: Response):
+    """Session probe for the web app: always 200, never 401.
+
+    {user, plan} when logged in. When the access cookie has expired but the refresh cookie is still good, the
+    session is renewed here (new cookies), saving the 401 → /refresh → retry round trip. Logged out:
+    {user: null, plan: null, reason: null | "expired" | "revoked"}. Public pages call this on every load, so
+    a logged-out visitor no longer logs a 401 in the console (QA 3 Nov). `/auth/me` keeps its 401 contract."""
+    import plans
+    response.headers["Cache-Control"] = "no-store"
+
+    async def ok(user: dict) -> dict:
+        return {"user": public_user(user), "plan": await plans.plan_info(_db(), user), "reason": None}
+
+    def out(reason: Optional[str]) -> dict:
+        if request.cookies.get("access_token") or request.cookies.get("refresh_token"):
+            clear_auth_cookies(response)
+        return {"user": None, "plan": None, "reason": reason}
+
+    access = request.cookies.get("access_token")
+    if not access:
+        h = request.headers.get("Authorization", "")
+        access = h[7:] if h.startswith("Bearer ") else None
+    for token, kind in ((access, "access"), (request.cookies.get("refresh_token"), "refresh")):
+        if not token:
+            continue
+        try:
+            user = await _user_from_token(token, kind)
+        except HTTPException as e:
+            if e.status_code == 403:
+                return out("revoked")
+            continue
+        if kind == "refresh":
+            set_auth_cookies(response, str(user["_id"]), user.get("role") or "user")
+        return await ok(user)
+    return out("expired" if (access or request.cookies.get("refresh_token")) else None)
+
+
 @router.post("/logout")
 async def logout(response: Response):
     clear_auth_cookies(response)

@@ -334,6 +334,12 @@ async def get_settings(_: dict = Admin):
     return await appsettings.get(db())
 
 
+@router.get("/settings/spec")
+async def settings_spec(_: dict = Admin):
+    """Limits for each setting, so the admin form checks exactly what the server checks."""
+    return appsettings.spec()
+
+
 @router.post("/settings")
 async def set_settings(body: dict, _: dict = Admin):
     return await appsettings.update(db(), body)
@@ -348,7 +354,8 @@ async def vendors(_: dict = Admin):
         except Exception as e:  # noqa: BLE001
             m = f"error: {e}"
         out.append({"name": n, "mode": m})
-    return {"vendors": out}
+    import llm
+    return {"vendors": out, "ai_pools": llm.pool_stats()}
 
 
 @router.get("/jobs")
@@ -361,7 +368,8 @@ async def run_job(name: str, _: dict = Admin):
     if name not in registry.JOBS:
         raise HTTPException(status_code=404, detail={"code": "unknown_job", "msg": "Unknown job."})
     r = await registry.run(db(), name)
-    return {"ok": r.get("ok"), "result": r.get("result") or r.get("error"), "ms": r.get("ms")}
+    view = registry.run_view(name, r)
+    return {"ok": view["ok"], "summary": view["summary"], "result": view["result"], "ms": view["ms"], "at": view["at"]}
 
 
 # ------------------------------------------------------------------ content: airdrops ----

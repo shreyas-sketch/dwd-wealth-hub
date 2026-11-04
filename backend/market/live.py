@@ -7,10 +7,13 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
+
+from core.http import RateLimited, TokenBucket, shared_client
 
 log = logging.getLogger("market.live")
 
@@ -38,6 +41,22 @@ def _headers() -> dict:
     return {"accept": "application/json", hdr: key}
 
 
+def _cg_rate() -> float:
+    """CoinGecko calls per minute this worker may make. Free/demo tier allows ~30/min per IP, shared by all workers,
+    so the default leaves room for 2 workers; set COINGECKO_RATE_PER_MIN for a paid key (e.g. 400)."""
+    try:
+        return max(1.0, float(os.environ.get("COINGECKO_RATE_PER_MIN", "") or (400 if "pro-api" in CG else 12)))
+    except ValueError:
+        return 12.0
+
+
+# One budget per worker for every CoinGecko call. When it's used up, calls fail fast with RateLimited and
+# market._cached serves the last good value (stale-while-error), instead of CoinGecko answering 429 for everyone.
+CG_BUCKET = TokenBucket(_cg_rate(), 60.0, name="coingecko")
+_ID_TTL, _ID_MISS_TTL = 24 * 3600, 3600
+_ids: dict[str, tuple[float, Optional[str]]] = {}      # symbol → (at, coingecko id | None), so prices() skips /search
+
+
 def _row(m: dict) -> dict:
     return {"id": m.get("id"), "symbol": (m.get("symbol") or "").upper(), "name": m.get("name"),
             "rank": m.get("market_cap_rank"), "price_usd": m.get("current_price"),
@@ -50,23 +69,33 @@ class LiveMarket:
         self._client = client
 
     async def _get(self, url: str, params: Optional[dict] = None, headers: Optional[dict] = None):
-        c = self._client or httpx.AsyncClient(timeout=15)
-        try:
-            r = await c.get(url, params=params, headers=headers or _headers())
-            r.raise_for_status()
-            return r.json()
-        finally:
-            if self._client is None:
-                await c.aclose()
+        is_cg = url.startswith(CG)
+        if is_cg:
+            await CG_BUCKET.acquire(float(os.environ.get("COINGECKO_MAX_WAIT_S", "4") or 4))
+        c = self._client or shared_client()
+        r = await c.get(url, params=params, headers=headers or _headers(), timeout=15)
+        if is_cg and r.status_code == 429:
+            try:
+                wait = float(r.headers.get("retry-after") or 60)
+            except ValueError:
+                wait = 60.0
+            CG_BUCKET.cool_down(min(wait, 300))
+            raise RateLimited("coingecko answered 429")
+        r.raise_for_status()
+        return r.json()
 
     async def _id_for(self, symbol: str) -> Optional[str]:
         if symbol in IDS:
             return IDS[symbol]
+        hit = _ids.get(symbol)
+        if hit and time.time() - hit[0] < (_ID_TTL if hit[1] else _ID_MISS_TTL):
+            return hit[1]
         d = await self._get(f"{CG}/search", {"query": symbol})
-        for c in d.get("coins", []):
-            if (c.get("symbol") or "").upper() == symbol:
-                return c["id"]
-        return None
+        found = next((c["id"] for c in d.get("coins", []) if (c.get("symbol") or "").upper() == symbol), None)
+        if len(_ids) > 5000:
+            _ids.clear()
+        _ids[symbol] = (time.time(), found)
+        return found
 
     async def top_coins(self, n: int) -> list[dict]:
         d = await self._get(f"{CG}/coins/markets", {"vs_currency": "usd", "order": "market_cap_desc",

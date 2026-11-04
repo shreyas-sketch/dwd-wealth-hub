@@ -33,34 +33,106 @@ class LLMError(RuntimeError):
     pass
 
 
-# Concurrency guard (load test, 3 Nov): a webinar puts hundreds of people on X-Ray / Ask at the same second.
-# At most LLM_MAX_CONCURRENCY calls are in flight per worker; the rest wait up to LLM_QUEUE_WAIT_S (15 s) for a slot,
-# then fail fast with LLMError so the caller shows its rule-based answer instead of hanging. Each call has a
-# hard LLM_TIMEOUT_S. Size LLM_MAX_CONCURRENCY × workers against your Anthropic rate limit.
-_SEM: dict = {"sem": None, "n": None}
+class AIBusy(LLMError):
+    """The pool for this model class stayed full for the whole queue wait. `retry_after` (seconds) is a hint for
+    the client; callers turn it into 503 + Retry-After and refund the member's use."""
+
+    def __init__(self, msg: str, retry_after: int):
+        super().__init__(msg)
+        self.retry_after = retry_after
 
 
-def _sem() -> asyncio.Semaphore:
-    n = int(os.environ.get("LLM_MAX_CONCURRENCY", "32") or 32)
-    if _SEM["sem"] is None or _SEM["n"] != n:
-        _SEM["sem"], _SEM["n"] = asyncio.Semaphore(n), n
-    return _SEM["sem"]
+# ---- Bulkheads (load test, 3 Nov) -----------------------------------------------------------------------------
+# A webinar puts hundreds of people on X-Ray, Ask and Chart Reader in the same minute. Each model class gets its
+# own pool so a burst of slow vision calls (Chart Reader) can't starve the fast ones (X-Ray, Ask), and the other
+# way round. In the hard-burst test one shared pool of 32 with a 15 s wait turned away 116 of 500 chart reads.
+#
+#   LLM_MAX_CONCURRENCY_<CLASS>   calls in flight per worker   (default: LLM_MAX_CONCURRENCY, 32)
+#   LLM_QUEUE_WAIT_S_<CLASS>      how long a call may wait     (fast/strong 15 s; vision 45 s: the member is already
+#                                                               watching an upload spinner, and a refund-and-retry
+#                                                               costs them more time than waiting)
+# Size the totals (× WEB_CONCURRENCY workers) against the Anthropic account's rate limits.
+_QUEUE_DEFAULTS = {"fast": 15.0, "strong": 15.0, "vision": 45.0}
 
 
-async def _guarded(coro_fn, task: str):
-    sem = _sem()
+def _env_num(name: str, default: float) -> float:
     try:
-        await asyncio.wait_for(sem.acquire(), timeout=float(os.environ.get("LLM_QUEUE_WAIT_S", "15") or 15))
-    except (asyncio.TimeoutError, TimeoutError):
-        log.warning("LLM task %s: queue full, using fallback", task)
-        raise LLMError("AI is busy right now.")
-    try:
-        return await asyncio.wait_for(coro_fn(), timeout=float(os.environ.get("LLM_TIMEOUT_S", "25") or 25))
-    except (asyncio.TimeoutError, TimeoutError):
-        log.warning("LLM task %s timed out", task)
-        raise LLMError("AI took too long.")
-    finally:
-        sem.release()
+        v = float(os.environ.get(name, "") or default)
+        return v if v > 0 else default
+    except ValueError:
+        return default
+
+
+class _Pool:
+    def __init__(self, name: str):
+        self.name = name
+        self.size = 0
+        self.sem: Optional[asyncio.Semaphore] = None
+        self.in_flight = 0
+        self.waiting = 0
+        self.rejected = 0
+
+    def _configure(self) -> None:
+        base = _env_num("LLM_MAX_CONCURRENCY", 32)
+        n = int(_env_num(f"LLM_MAX_CONCURRENCY_{self.name.upper()}", base))
+        if self.sem is None or n != self.size:
+            self.sem, self.size = asyncio.Semaphore(n), n
+
+    @property
+    def wait_s(self) -> float:
+        legacy = os.environ.get("LLM_QUEUE_WAIT_S")
+        default = _env_num("LLM_QUEUE_WAIT_S", 15) if (legacy and self.name != "vision") else _QUEUE_DEFAULTS[self.name]
+        return _env_num(f"LLM_QUEUE_WAIT_S_{self.name.upper()}", default)
+
+    async def run(self, coro_fn, task: str):
+        self._configure()
+        sem = self.sem
+        self.waiting += 1
+        try:
+            await asyncio.wait_for(sem.acquire(), timeout=self.wait_s)
+        except (asyncio.TimeoutError, TimeoutError):
+            self.rejected += 1
+            log.warning("LLM task %s: %s pool full for %.0fs (size %d), giving up", task, self.name, self.wait_s, self.size)
+            raise AIBusy("AI is busy right now.", retry_after=10 if self.name != "vision" else 20)
+        finally:
+            self.waiting -= 1
+        self.in_flight += 1
+        try:
+            return await asyncio.wait_for(coro_fn(), timeout=_env_num("LLM_TIMEOUT_S", 25 if self.name != "vision" else 45))
+        except (asyncio.TimeoutError, TimeoutError):
+            log.warning("LLM task %s timed out", task)
+            raise LLMError("AI took too long.")
+        finally:
+            self.in_flight -= 1
+            sem.release()
+
+    def stats(self) -> dict:
+        self._configure()
+        return {"pool": self.name, "size": self.size, "in_flight": self.in_flight, "waiting": self.waiting,
+                "queue_wait_s": self.wait_s, "rejected": self.rejected}
+
+
+_POOLS: dict[str, _Pool] = {}
+
+
+def _pool(model: str) -> _Pool:
+    key = model if model in _QUEUE_DEFAULTS else "fast"
+    if key not in _POOLS:
+        _POOLS[key] = _Pool(key)
+    return _POOLS[key]
+
+
+def pool_stats() -> list[dict]:
+    """This worker's AI pools, for Admin › Vendors during a webinar."""
+    return [_pool(m).stats() for m in _QUEUE_DEFAULTS]
+
+
+def reset_pools() -> None:
+    _POOLS.clear()
+
+
+async def _guarded(coro_fn, task: str, model: str = "fast"):
+    return await _pool(model).run(coro_fn, task)
 
 
 async def _call_text(*, model: str, max_tokens: int, system: str, content) -> str:
@@ -109,7 +181,7 @@ async def complete_json(*, task: str, system: str, prompt: str, fake: Callable[[
         raise
 
 
-async def _fake_with_latency(fake: Callable[[], Any], task: str):
+async def _fake_with_latency(fake: Callable[[], Any], task: str, model: str = "fast"):
     """LLM_FAKE_LATENCY_MS (load tests only): make fake answers take as long as real ones and go through the
     same concurrency guard, so a load test shows what the real Anthropic latency does to queues."""
     ms = int(os.environ.get("LLM_FAKE_LATENCY_MS", "0") or 0)
@@ -119,13 +191,13 @@ async def _fake_with_latency(fake: Callable[[], Any], task: str):
     async def slow():
         await asyncio.sleep(ms / 1000)
         return fake()
-    return await _guarded(slow, task)
+    return await _guarded(slow, task, model)
 
 
 async def _complete_json(*, task, system, prompt, fake, model, max_tokens, images) -> dict:
     m = mode()
     if m == "fake":
-        return await _fake_with_latency(fake, task)
+        return await _fake_with_latency(fake, task, model)
     if m == "off":
         raise LLMError("AI is not configured (ANTHROPIC_API_KEY).")
     content: list = []
@@ -135,7 +207,7 @@ async def _complete_json(*, task, system, prompt, fake, model, max_tokens, image
                                                     "data": base64.b64encode(data).decode()}})
     content.append({"type": "text", "text": prompt + "\n\nReply with one JSON object only."})
     try:
-        text = await _guarded(lambda: _call_text(model=model, max_tokens=max_tokens, system=system, content=content), task)
+        text = await _guarded(lambda: _call_text(model=model, max_tokens=max_tokens, system=system, content=content), task, model)
         return _parse(text)
     except LLMError:
         raise
@@ -148,11 +220,11 @@ async def complete_text(*, task: str, system: str, prompt: str, fake: Callable[[
                         max_tokens: int = 1200) -> str:
     m = mode()
     if m == "fake":
-        return await _fake_with_latency(fake, task)
+        return await _fake_with_latency(fake, task, model)
     if m == "off":
         raise LLMError("AI is not configured (ANTHROPIC_API_KEY).")
     try:
-        text = await _guarded(lambda: _call_text(model=model, max_tokens=max_tokens, system=system, content=prompt), task)
+        text = await _guarded(lambda: _call_text(model=model, max_tokens=max_tokens, system=system, content=prompt), task, model)
         return text.strip()
     except LLMError:
         raise

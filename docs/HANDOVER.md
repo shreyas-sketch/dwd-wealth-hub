@@ -3,7 +3,7 @@
 A new, separate app for the DWD crypto funnel. It is built on Bullzeye's code, with Bullzeye's look and a new colour mix (cool grey panels, Bitcoin-orange highlights).
 
 - **Status:** runs end to end on sample data.
-- **Tests:** 54 backend tests pass.
+- **Tests:** 102 backend tests pass (`cd backend && python -m pytest -q`).
 - **Frontend:** builds clean.
 - **Not done yet:** nothing has been run against the live data sources (this workspace had no internet access to them).
 

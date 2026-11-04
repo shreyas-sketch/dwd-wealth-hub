@@ -118,7 +118,10 @@ async def run_job(ctx) -> dict:
     due = [p async for p in db.dca_plans.find({"status": "active", "next_at": {"$lte": now}})]
     for k in range(0, len(due), 500):
         await asyncio.gather(*(one(p) for p in due[k:k + 500]))
-    return tally
+    # Plans buy on their own day (a new plan's first buy is its scheduled day, by design). Report that, so
+    # "Run now" with nothing due says when the next buy is instead of looking like it did nothing.
+    nxt = await db.dca_plans.find_one({"status": "active", "next_at": {"$gt": now}}, {"next_at": 1}, sort=[("next_at", 1)])
+    return {**tally, "due": len(due), "next_due_at": as_utc(nxt["next_at"]).isoformat() if nxt else None}
 
 
 async def summary(db, user_id: str, prices_usd: dict[str, float], fx: float) -> list[dict]:

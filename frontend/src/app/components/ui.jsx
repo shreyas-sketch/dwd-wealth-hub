@@ -203,12 +203,14 @@ export const inputCls =
   "w-full min-h-[48px] rounded-bzbtn border border-bz-line-strong bg-bz-card text-bz-ink px-3.5 py-2.5 text-[16px] " +
   "placeholder:text-bz-muted outline-none focus:border-bz-accent";
 
-export function Field({ label, hint, children, className = "" }) {
+// `error`: a field-level message shown under the input (replaces the hint while present).
+export function Field({ label, hint, error, children, className = "" }) {
   return (
     <label className={`block ${className}`}>
       <span className="block font-bzmono text-[11px] uppercase tracking-[0.16em] text-bz-muted mb-1.5">{label}</span>
       {children}
-      {hint && <span className="block text-[12px] text-bz-muted mt-1">{hint}</span>}
+      {error ? <span className="block text-[12px] text-bz-miss mt-1" role="alert">{error}</span>
+        : hint && <span className="block text-[12px] text-bz-muted mt-1">{hint}</span>}
     </label>
   );
 }

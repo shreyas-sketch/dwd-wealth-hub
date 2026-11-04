@@ -39,6 +39,14 @@ def _reset_caches():
     p2p._cache.clear()
     from features import ask
     ask.reset_kb_cache()
+    import llm
+    llm.reset_pools()            # semaphores bind to an event loop; each test gets fresh ones
+    from market import live
+    live.CG_BUCKET.reset()
+    live._ids.clear()
+    from accounts import otp_service
+    for b in otp_service.BREAKERS.values():
+        b.success()
     yield
 
 

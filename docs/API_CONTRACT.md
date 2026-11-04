@@ -27,6 +27,7 @@ airdrops, autopilot, chart, ask, baskets, radar, calendar, p2p, news`
 |---|---|---|---|
 | POST | /auth/otp/request | `{phone, channel?: "auto"\|"sms"\|"whatsapp"}` | `{challenge_id, channel, sent_to, expires_in, resend_in, is_new, dev_code?}` (`dev_code` only in QA mode) |
 | POST | /auth/otp/verify | `{challenge_id, phone, code, name?, utm?, device_id?}` | `{user, is_new}` + cookies. **Creates the account if the number is new.** |
+| GET | /auth/session | — | Always 200: `{user, plan: PlanInfo, reason: null}` when logged in, else `{user: null, plan: null, reason: null\|"expired"\|"revoked"}`. Renews the session from the refresh cookie when the access cookie has expired. The web app uses this on load (no 401 in the console on public pages). |
 | GET | /auth/me | — | `{user, plan: PlanInfo}` (401 if logged out) |
 | POST | /auth/logout | — | `{ok}` |
 | POST | /auth/refresh | — | `{ok}` |
@@ -166,6 +167,8 @@ next_at, last_error, buys, invested_inr, value_inr, return_pct, recent: [{at, co
 `POST /chart` multipart `file` (+ optional `symbol`) →
 `{is_chart, symbol, timeframe, trend: "up|down|sideways", summary, support: [str], resistance: [str], rsi_read,
 patterns: [str], what_to_watch: [str], usage, disclaimer}`. Not a chart → `400 {"code": "not_chart"}`.
+AI busy or slow → `503 {"code": "unavailable", "msg", "retry_after": seconds}` with a `Retry-After` header; the use is
+refunded and the web app retries automatically (twice) after the countdown. Images over 5 MB → `400 {"code": "too_large"}`.
 
 ## Ask Deepak AI (pro)
 
@@ -236,14 +239,15 @@ offers: [{merchant, price, min_inr, max_inr, completion_pct, orders, payment: [s
 | POST | /admin/users/{id}/trial | `{days}` |
 | POST | /admin/users/{id}/status | `{status: "active"\|"revoked"}` |
 | GET / POST | /admin/flags | list / `{key, on: true\|false\|null}` |
-| GET / POST | /admin/settings | `{trial_days, scenario_rates: {bad, average, good}, crash_levels: [20, 30, 40], anon_xray_per_day}` |
-| GET | /admin/vendors | `{vendors: [{name, mode}]}` |
-| GET / POST / PUT / DELETE | /admin/airdrops[/{id}] | Airdrop fields (no done_steps) |
+| GET / POST | /admin/settings | `{trial_days, scenario_rates: {bad, average, good}, crash_levels: [20, 30, 40], anon_xray_per_day}`. Out-of-range or non-numeric values are **rejected, never clipped**: `400 {"code": "bad_setting", "field", "msg", "errors": {field: msg}}` (fields: `trial_days`, `anon_xray_per_day`, `scenario_rates.bad\|average\|good`, `scenario_rates` (must rise bad → good), `crash_levels`); nothing is saved if any field is wrong. |
+| GET | /admin/settings/spec | `{fields: {<field>: {label, min, max, integer, unit}}, max_crash_levels}`: the limits the server checks. |
+| GET | /admin/vendors | `{vendors: [{name, mode}], ai_pools: [{pool: "fast\|strong\|vision", size, in_flight, waiting, queue_wait_s, rejected}]}` (this worker) |
+| GET / POST / PUT / DELETE | /admin/airdrops[/{id}] | Airdrop fields (no done_steps). `steps: [{id?, text}]` (max 30): send back each loaded step's `id` so members' ticks stay on that step when steps are reordered; steps without an id reuse an old id with the same text or get a new one. Ticks on removed steps are dropped. |
 | GET / POST / PUT / DELETE | /admin/baskets[/{id}] | Basket fields |
 | GET / POST / PUT / DELETE | /admin/events[/{id}] | Event fields |
 | GET / POST | /admin/picks | `{week_of, published, picks: [{symbol, reasoning}]}`; `GET /admin/picks/suggest` → 2 suggested coins |
 | GET / POST | /admin/crash-notes | `{notes: [{level: 20, note}]}` |
 | GET / POST / DELETE | /admin/kb[/{id}] | list docs `{items: [{id, title, chunks, words, uploaded_at}]}`; POST multipart `file` + `title` |
 | GET / POST | /admin/etf-flows | `{items: [{date, net_usd_m, note}]}` / `{date, net_usd_m, note}` |
-| GET | /admin/jobs | `{items: [{name, schedule, last: {at, ok, result}}]}` |
-| POST | /admin/jobs/{name}/run | `{ok, result}` |
+| GET | /admin/jobs | `{items: [{name, label, schedule, last: {at, ok, summary, result, ms}}]}`. `summary` is one plain sentence ("3 plans bought, 1 failed (of 4 due)."); `result` is the raw dict for the details view. |
+| POST | /admin/jobs/{name}/run | `{ok, summary, result, ms, at}` |

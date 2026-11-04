@@ -30,7 +30,10 @@ async def read_chart(file: UploadFile = File(...), symbol: Optional[str] = Form(
     except ChartError as e:
         await plans.refund(db(), user, "chart")
         # "unavailable" = the AI is busy or slow (not the user's fault): 503 so the app says "try again in a minute"
-        raise HTTPException(status_code=503 if e.code == "unavailable" else 400, detail={"code": e.code, "msg": e.msg})
+        if e.code == "unavailable":
+            raise HTTPException(status_code=503, detail={"code": e.code, "msg": e.msg, "retry_after": e.retry_after or 15},
+                                headers={"Retry-After": str(e.retry_after or 15)})
+        raise HTTPException(status_code=400, detail={"code": e.code, "msg": e.msg})
     if not out.get("is_chart"):
         await plans.refund(db(), user, "chart")
         raise HTTPException(status_code=400, detail={"code": "not_chart",

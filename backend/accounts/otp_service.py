@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal, Optional
 
+from core.http import CircuitBreaker
 from growth import events
 from growth.clock import as_utc, utcnow
 
@@ -103,6 +104,17 @@ async def _check_limits(db, phone: str, ip: str, now: datetime) -> None:
         raise OtpError("ip_limit", "Too many requests from this network. Try again later.", 429)
 
 
+# Per worker, per channel. If WhatsApp (AiSensy) fails several times in a row, e.g. its burst limit during the
+# webinar QR moment, new codes go straight to SMS for a minute instead of every person waiting for WhatsApp to
+# fail first. A channel the member picked explicitly ("Send by SMS instead") is always tried.
+BREAKERS: dict[str, CircuitBreaker] = {
+    "whatsapp": CircuitBreaker(threshold=int(os.environ.get("OTP_BREAKER_FAILURES", "5") or 5),
+                               cool_s=float(os.environ.get("OTP_BREAKER_COOL_S", "60") or 60), name="otp:whatsapp"),
+    "sms": CircuitBreaker(threshold=int(os.environ.get("OTP_BREAKER_FAILURES", "5") or 5),
+                          cool_s=float(os.environ.get("OTP_BREAKER_COOL_S", "60") or 60), name="otp:sms"),
+}
+
+
 async def _deliver(senders: Senders, phone: str, code: str, channel: Channel) -> tuple[SendResult, bool]:
     """Returns (result, fell_back)."""
     if channel == "whatsapp" and senders.whatsapp is None:
@@ -111,12 +123,24 @@ async def _deliver(senders: Senders, phone: str, code: str, channel: Channel) ->
     order = [s for s in order if s is not None]
     if not order:
         return SendResult(False, "none", "none", error="no OTP provider configured"), False
+    if channel == "auto" and len(order) > 1:
+        # skip channels whose breaker is open, but never skip all of them
+        healthy = [s for s in order if not BREAKERS.get(s.channel, CircuitBreaker()).open]
+        if healthy and healthy != order:
+            return await _try(healthy, phone, code, fell_back_from_start=True)
+    return await _try(order, phone, code)
+
+
+async def _try(order: list, phone: str, code: str, fell_back_from_start: bool = False) -> tuple[SendResult, bool]:
     first: Optional[SendResult] = None
     for i, sender in enumerate(order):
         res = await sender.send(phone, code, TTL_MIN)
+        br = BREAKERS.get(sender.channel)
+        if br and getattr(sender, "name", "") != "console":
+            br.success() if res.ok else br.failure()
         first = first or res
         if res.ok:
-            return res, i > 0
+            return res, fell_back_from_start or i > 0
     return first, False
 
 

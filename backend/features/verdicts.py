@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 import statistics
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal, Optional
 
@@ -74,51 +75,89 @@ def indicators(closes: list[float]) -> dict:
             "daily_vol": vol, "drift": statistics.fmean(rets[-90:]) if rets else 0.0}
 
 
-def rule_verdict(ind: dict) -> tuple[str, int, list[str], list[str]]:
+@dataclass(frozen=True)
+class Signal:
+    """One rule-based argument: the plain-English point and the number that backs it.
+
+    Points and evidence are created together, so a point can never be paired with
+    another point's data (QA 3 Nov: the fake debate zipped two fixed lists by position)."""
+    point: str
+    evidence: str
+
+    def as_dict(self) -> dict:
+        return {"point": self.point, "evidence": self.evidence}
+
+
+# Always-true context used to fill a side to 3 points when the indicators give fewer.
+_BULL_FILLERS = (
+    Signal("Big, liquid coin listed on every major exchange.", "Rank #{rank} by market size"),
+    Signal("Steady buyers through past cycles have been rewarded over the long run.", "Past 4-year cycles"),
+    Signal("Regular monthly buying smooths out the jumps.", "Rupee-cost averaging"),
+)
+_BEAR_FILLERS = (
+    Signal("Crypto can fall 30–50% even in good years.", "Yearly volatility {vol30_ann}%"),
+    Signal("News and big-holder selling can move the price fast.", "Unregulated market"),
+    Signal("There is no investor protection if an exchange fails.", "Crypto is unregulated in India"),
+)
+
+
+def signals(ind: dict, rank: Optional[int] = None) -> tuple[int, list[Signal], list[Signal]]:
+    """Score (−4…+3) plus bull and bear signals (3 each, most specific first)."""
     s = 0
-    bull, bear = [], []
+    bull: list[Signal] = []
+    bear: list[Signal] = []
+    trend_ev = f"20-day avg {ind['ema20']:.4g} vs 50-day {ind['ema50']:.4g}"
     if ind["ema20"] > ind["ema50"]:
         s += 1
-        bull.append("Short-term trend is above the longer trend (20-day average over 50-day).")
+        bull.append(Signal("Short-term trend is above the longer trend (20-day average over 50-day).", trend_ev))
     else:
         s -= 1
-        bear.append("Short-term trend is below the longer trend (20-day average under 50-day).")
+        bear.append(Signal("Short-term trend is below the longer trend (20-day average under 50-day).", trend_ev))
+    chg_ev = f"30-day change {ind['chg30']}%"
     if ind["chg30"] > 5:
         s += 1
-        bull.append(f"Up {ind['chg30']}% over 30 days — buyers are in control.")
+        bull.append(Signal(f"Up {ind['chg30']}% over 30 days — buyers are in control.", chg_ev))
     elif ind["chg30"] < -5:
         s -= 1
-        bear.append(f"Down {abs(ind['chg30'])}% over 30 days — sellers are in control.")
+        bear.append(Signal(f"Down {abs(ind['chg30'])}% over 30 days — sellers are in control.", chg_ev))
     r = ind["rsi14"]
+    rsi_ev = f"RSI {r}"
     if r > 72:
         s -= 1
-        bear.append(f"RSI {r}: overheated — pullbacks are common from here.")
+        bear.append(Signal(f"RSI {r}: overheated — pullbacks are common from here.", rsi_ev))
     elif r < 30:
         s += 1
-        bull.append(f"RSI {r}: oversold — bounces often start near here.")
+        bull.append(Signal(f"RSI {r}: oversold — bounces often start near here.", rsi_ev))
+    elif r >= 50:
+        bull.append(Signal(f"RSI {r}: momentum is positive but not extreme.", rsi_ev))
     else:
-        (bull if r >= 50 else bear).append(f"RSI {r}: momentum is {'positive' if r >= 50 else 'weak'} but not extreme.")
+        bear.append(Signal(f"RSI {r}: momentum is weak but not extreme.", rsi_ev))
+    dd_ev = f"{ind['drawdown90']}% from the 90-day high"
     if ind["drawdown90"] < -25:
-        bear.append(f"{abs(ind['drawdown90'])}% below its 90-day high.")
-        bull.append("A deep fall can mean better long-term entry prices for steady buyers.")
+        bear.append(Signal(f"{abs(ind['drawdown90'])}% below its 90-day high.", dd_ev))
+        bull.append(Signal("A deep fall can mean better long-term entry prices for steady buyers.", dd_ev))
     if ind["vol30_ann"] > 90:
-        bear.append(f"Very jumpy: about {ind['vol30_ann']:.0f}% yearly volatility.")
-    for extra in ("Big, liquid coin listed on every major exchange.",
-                  "Steady buyers through past cycles have been rewarded over the long run."):
-        if len(bull) < 3 and extra not in bull:
-            bull.append(extra)
-    for extra in ("Crypto can fall 30–50% even in good years.",
-                  "News and big-holder selling can move the price fast."):
-        if len(bear) < 3 and extra not in bear:
-            bear.append(extra)
+        bear.append(Signal(f"Very jumpy: about {ind['vol30_ann']:.0f}% yearly volatility.", f"Yearly volatility {ind['vol30_ann']}%"))
+    ctx = {"rank": rank or "—", "vol30_ann": ind["vol30_ann"]}
+    for side, fillers in ((bull, _BULL_FILLERS), (bear, _BEAR_FILLERS)):
+        for f in fillers:
+            if len(side) >= 3:
+                break
+            side.append(Signal(f.point, f.evidence.format(**ctx)))
+    return s, bull[:3], bear[:3]
+
+
+def rule_verdict(ind: dict, rank: Optional[int] = None) -> tuple[str, int, list[Signal], list[Signal]]:
+    s, bull, bear = signals(ind, rank)
     verdict = "Bullish" if s >= 2 else "Bearish" if s <= -2 else "Neutral"
     conf = min(85, 50 + abs(s) * 9)
-    return verdict, conf, bull[:3], bear[:3]
+    return verdict, conf, bull, bear
 
 
 # ------------------------------------------------------------------ daily job ----
 async def committee(sym: str, name: str, ind: dict) -> dict:
-    v, conf, bull, bear = rule_verdict(ind)
+    v, conf, bull_s, bear_s = rule_verdict(ind)
+    bull, bear = [x.point for x in bull_s], [x.point for x in bear_s]
 
     def fake():
         return {"bull": bull, "bear": bear, "verdict": v, "confidence": conf,
@@ -315,19 +354,34 @@ class DebateIn(BaseModel):
     symbol: str = Field(..., max_length=15)
 
 
+def _valid_debate(out) -> Optional[dict]:
+    """A model reply is used only if both sides have 3 {point, evidence} strings and the chair verdict is known;
+    anything else falls back to the rule-based debate rather than showing a lopsided or half-empty screen."""
+    if not isinstance(out, dict):
+        return None
+    for side in ("bull", "bear"):
+        items = out.get(side)
+        if not isinstance(items, list) or len(items) < 3:
+            return None
+        if not all(isinstance(i, dict) and str(i.get("point") or "").strip() and str(i.get("evidence") or "").strip()
+                   for i in items[:3]):
+            return None
+    chair = out.get("chair")
+    if not isinstance(chair, dict) or chair.get("verdict") not in ("Bullish", "Neutral", "Bearish"):
+        return None
+    return out
+
+
 async def debate_for(sym: str) -> dict:
     hist = await market.history(sym, 150)
     if len(hist) < 60:
         raise HTTPException(status_code=404, detail={"code": "no_history", "msg": f"Not enough price history for {sym}."})
     info = await market.search(sym) or {"name": sym}
     ind = indicators([p for _, p in hist])
-    v, conf, bull, bear = rule_verdict(ind)
-    ev_b = [f"30-day change {ind['chg30']}%", f"RSI {ind['rsi14']}", f"Rank #{info.get('rank') or '—'} by size"]
-    ev_r = [f"Yearly volatility {ind['vol30_ann']}%", f"{ind['drawdown90']}% from the 90-day high", "Unregulated market"]
+    v, conf, bull, bear = rule_verdict(ind, info.get("rank"))
 
     def fake():
-        return {"bull": [{"point": p, "evidence": e} for p, e in zip(bull, ev_b)],
-                "bear": [{"point": p, "evidence": e} for p, e in zip(bear, ev_r)],
+        return {"bull": [x.as_dict() for x in bull], "bear": [x.as_dict() for x in bear],
                 "chair": {"verdict": v, "confidence": conf,
                           "call": f"On balance {v.lower()}. {'The trend supports buyers' if v == 'Bullish' else 'Wait for the trend to improve' if v == 'Bearish' else 'Neither side has a clear edge'}; size any buy so a 40% fall wouldn't hurt."}}
     sys = ("Run a debate on one crypto coin for Indian beginners: bull analyst (3 points), bear analyst (3 points), then a chair "
@@ -337,7 +391,8 @@ async def debate_for(sym: str) -> dict:
               f"from 90-day high {ind['drawdown90']}%, market cap rank {info.get('rank')}.\n"
               'Return {"bull": [{"point", "evidence"}], "bear": [{"point", "evidence"}], "chair": {"verdict": "Bullish|Neutral|Bearish", "confidence": 0-100, "call": str}}.')
     try:
-        out = await llm.complete_json(task="debate", system=sys, prompt=prompt, fake=fake, model="strong", max_tokens=1500)
+        out = _valid_debate(await llm.complete_json(task="debate", system=sys, prompt=prompt, fake=fake, model="strong",
+                                                    max_tokens=1500)) or fake()
     except llm.LLMError:
         out = fake()
     return {"symbol": sym, "bull": out.get("bull", [])[:3], "bear": out.get("bear", [])[:3], "chair": out.get("chair"),

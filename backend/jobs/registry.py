@@ -160,6 +160,13 @@ async def listing(db) -> list[dict]:
     for name, (label, sched, _) in JOBS.items():
         last = await db.job_runs.find_one({"name": name}, sort=[("at", -1)])
         out.append({"name": name, "label": label, "schedule": schedule_text(sched),
-                    "last": {"at": iso(last["at"]), "ok": last.get("ok"), "result": last.get("result") or last.get("error"),
-                             "ms": last.get("ms")} if last else None})
+                    "last": run_view(name, last) if last else None})
     return out
+
+
+def run_view(name: str, row: dict) -> dict:
+    """One job_runs row as the admin sees it: a sentence (`summary`) plus the raw result for the details view."""
+    from util import iso
+    from .summaries import describe
+    return {"at": iso(row.get("at")), "ok": row.get("ok"), "summary": describe(name, row.get("result"), row.get("error")),
+            "result": row.get("result") or row.get("error"), "ms": row.get("ms")}

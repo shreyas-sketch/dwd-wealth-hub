@@ -4,7 +4,24 @@ import { ThemeToggle } from "@/context/ThemeContext";
 import brand from "@/brand";
 import Logo, { LogoMark } from "./Logo";
 
-export default function AuthShell({ eyebrow, title, subtitle, children, footer }) {
+// Why someone landed on a login page (?reason=, set by the auth guards in context/AuthContext.jsx).
+const REASONS = {
+  expired: { tone: "muted", text: "Your session ended. Log in again to carry on where you were." },
+  revoked: { tone: "miss", text: "This account has been disabled. If you think this is a mistake, contact the DWD support team." },
+};
+
+export function ReasonNotice({ search }) {
+  const r = REASONS[new URLSearchParams(search || "").get("reason")];
+  if (!r) return null;
+  return (
+    <p role="status" data-testid="login-reason"
+      className={`mb-5 rounded-bzbtn border px-3.5 py-2.5 text-[14px] ${r.tone === "miss" ? "border-bz-miss text-bz-miss bg-bz-miss-tint" : "border-bz-line bg-bz-inset text-bz-ink"}`}>
+      {r.text}
+    </p>
+  );
+}
+
+export default function AuthShell({ eyebrow, title, subtitle, children, footer, notice = null }) {
   return (
     <div className="min-h-screen w-full flex items-stretch bg-bz-bg text-bz-ink font-bz" data-testid="auth-shell">
       <aside className="hidden lg:flex lg:w-[44%] relative overflow-hidden border-r border-bz-line bg-bz-panel">
@@ -27,6 +44,7 @@ export default function AuthShell({ eyebrow, title, subtitle, children, footer }
         </div>
         <div className="flex-1 flex items-center justify-center p-5 sm:p-10">
           <div className="w-full max-w-[420px]">
+            {notice}
             {eyebrow && <p className="font-bzmono text-[11px] tracking-[0.28em] uppercase text-bz-gold-deep mb-3">{eyebrow}</p>}
             <h1 className="font-bzserif text-[32px] leading-tight font-semibold">{title}</h1>
             {subtitle && <p className="mt-2.5 text-[15px] text-bz-muted leading-relaxed">{subtitle}</p>}

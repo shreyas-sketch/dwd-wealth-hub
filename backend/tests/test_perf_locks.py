@@ -76,7 +76,7 @@ def test_llm_concurrency_limit_and_fallback(monkeypatch):
         state["active"] -= 1
         return '{"a": 1}'
     monkeypatch.setattr(llm, "_call_text", fake_call)
-    monkeypatch.setattr(llm, "_SEM", {"sem": None, "n": None})
+    llm.reset_pools()
     monkeypatch.setenv("LLM_MAX_CONCURRENCY", "4")
 
     async def go():

@@ -8,7 +8,7 @@ import {
   MessageCircle, Newspaper, Radar, Repeat, ScanSearch, Scale, Shield, Target, User, X,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useAuth } from "@/context/AuthContext";
+import { loginRedirect, useAuth } from "@/context/AuthContext";
 import { ThemeToggle } from "@/context/ThemeContext";
 import { captureAttribution, track } from "@/lib/attribution";
 import { daysUntil } from "@/lib/format";
@@ -107,12 +107,12 @@ function MenuBody({ onGo, user, plan, unread, onLogout }) {
   );
 }
 
-// Redirects to /login?next=… when logged out.
+// Redirects to /login when logged out (with ?next= unless the member logged out on purpose).
 export function RequireAuth({ children }) {
-  const { user, checking } = useAuth();
+  const { user, checking, signedOut } = useAuth();
   const { pathname, search } = useLocation();
   if (checking || user === null) return <div className="min-h-screen bg-bz-bg grid place-items-center"><Spinner /></div>;
-  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(pathname + search)}`} replace />;
+  if (!user) return <Navigate to={loginRedirect("/login", signedOut, pathname + search)} replace />;
   return children;
 }
 

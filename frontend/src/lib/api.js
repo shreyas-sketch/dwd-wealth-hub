@@ -8,7 +8,7 @@ export const API_BASE = `${BACKEND_URL}/api`;
 export const api = axios.create({ baseURL: API_BASE, withCredentials: true });
 
 // ---- Session renewal: on 401 call POST /auth/refresh once (shared by requests failing together), then retry.
-const NO_RENEW = ["/auth/refresh", "/auth/logout", "/auth/otp/", "/auth/staff/login", "/qa/login"];
+const NO_RENEW = ["/auth/refresh", "/auth/session", "/auth/logout", "/auth/otp/", "/auth/staff/login", "/qa/login"];
 let renewing = null;
 function renewSession() {
   if (!renewing) {

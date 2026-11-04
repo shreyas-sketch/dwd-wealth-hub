@@ -7,6 +7,7 @@ airdrop_progress {_id: "<uid>:<airdrop_id>", user_id, airdrop_id, done_steps: [s
 """
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import date
 from typing import Optional
@@ -52,14 +53,52 @@ class AirdropIn(BaseModel):
             raise ValueError("Deadline must be a real date (YYYY-MM-DD).")
     link: Optional[str] = Field(None, max_length=300)
     description: Optional[str] = Field(None, max_length=800)
-    steps: list[StepDef] = Field(default_factory=list)
+    steps: list[StepDef] = Field(default_factory=list, max_length=30)
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def reconcile_steps(incoming: list[StepDef], old: list[dict]) -> list[dict]:
+    """Give every step a stable id so members' ticks follow the step, not its position.
+
+    1. An id the client sends is kept (the admin editor sends back the id of every step it loaded; a create may
+       carry ids too). Only the first use of an id in one save counts; repeats are treated as id-less.
+    2. A step without an id reuses the id of an old step with the same text that no other step claimed (covers a
+       client that sends text only, e.g. a reordered paste).
+    3. Anything else is a new step with a fresh id that never collides with an old or claimed id.
+    QA 3 Nov: ids used to be assigned by position, so reordering moved every member's ticks."""
+    old_ids = {s["id"] for s in old if s.get("id")}
+    claimed: set[str] = {s.id for s in incoming if s.id}
+    by_text: dict[str, list[str]] = {}
+    for s in old:
+        if s.get("id") and s["id"] not in claimed:
+            by_text.setdefault(_norm(s.get("text", "")), []).append(s["id"])
+    out, used = [], set()
+    for s in incoming:
+        sid = s.id if s.id and s.id not in used else None
+        if sid is None:
+            pool = by_text.get(_norm(s.text)) or []
+            while pool and sid is None:
+                cand = pool.pop(0)
+                if cand not in used:
+                    sid = cand
+        if sid is None:
+            sid = uuid.uuid4().hex[:8]
+            while sid in used or sid in old_ids or sid in claimed:
+                sid = uuid.uuid4().hex[:8]
+        used.add(sid)
+        out.append({"id": sid, "text": s.text.strip()})
+    return out
 
 
 def public(a: dict, done: Optional[list] = None) -> dict:
     return {"id": a["_id"], "name": a["name"], "coin": a.get("coin"), "chain": a.get("chain"), "status": a.get("status", "live"),
             "reward": a.get("reward"), "deadline": a.get("deadline"), "link": a.get("link"),
             "description": a.get("description"), "steps": a.get("steps") or [],
-            "xray": a.get("xray"), **({"done_steps": done or []} if done is not None else {}),
+            "xray": a.get("xray"),
+            **({"done_steps": [i for i in done if i in {st["id"] for st in a.get("steps") or []}]} if done is not None else {}),
             "updated_at": iso(a.get("updated_at"))}
 
 
@@ -93,7 +132,10 @@ async def tick(airdrop_id: str, step_id: str, body: StepIn, user: dict = Depends
 async def save(body: AirdropIn, airdrop_id: Optional[str] = None) -> dict:
     from features.xray import run_xray
     now = utcnow()
-    steps = [{"id": s.id or uuid.uuid4().hex[:8], "text": s.text.strip()} for s in body.steps]
+    existing = await db().airdrops.find_one({"_id": airdrop_id}) if airdrop_id else None
+    if airdrop_id and not existing:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "msg": "Airdrop not found."})
+    steps = reconcile_steps(body.steps, (existing or {}).get("steps") or [])
     doc = {**body.model_dump(exclude={"steps"}), "steps": steps, "updated_at": now}
     if doc.get("coin"):
         doc["coin"] = doc["coin"].upper()
@@ -111,6 +153,9 @@ async def save(body: AirdropIn, airdrop_id: Optional[str] = None) -> dict:
         res = await db().airdrops.update_one({"_id": airdrop_id}, {"$set": doc})
         if not res.matched_count:
             raise HTTPException(status_code=404, detail={"code": "not_found", "msg": "Airdrop not found."})
+        # Ticks on steps the admin removed are dropped, so a later step can't inherit them.
+        await db().airdrop_progress.update_many({"airdrop_id": airdrop_id},
+                                                {"$pull": {"done_steps": {"$nin": [st["id"] for st in steps]}}})
         return public(await db().airdrops.find_one({"_id": airdrop_id}))
     doc.update(_id=uuid.uuid4().hex[:12], created_at=now)
     await db().airdrops.insert_one(doc)

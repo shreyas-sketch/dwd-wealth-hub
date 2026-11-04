@@ -19,6 +19,8 @@ from typing import Optional, Protocol
 
 import httpx
 
+from core.http import shared_client
+
 log = logging.getLogger("accounts.otp_providers")
 
 AISENSY_URL = "https://backend.aisensy.com/campaign/t1/api/v2"
@@ -60,12 +62,7 @@ class AiSensyWhatsApp:
                          "parameters": [{"type": "text", "text": code}]}],
         }
         try:
-            client = self._client or httpx.AsyncClient(timeout=10)
-            try:
-                r = await client.post(AISENSY_URL, json=payload)
-            finally:
-                if self._client is None:
-                    await client.aclose()
+            r = await (self._client or shared_client()).post(AISENSY_URL, json=payload, timeout=10)
             body = r.json() if r.content else {}
             if r.status_code == 200 and (body.get("success") in (True, "true") or "submitted_message_id" in body):
                 return SendResult(True, self.name, self.channel, ref=str(body.get("submitted_message_id") or ""))
@@ -84,13 +81,8 @@ class Msg91Sms:
         params = {"template_id": self.template_id, "mobile": phone_e164.lstrip("+"),
                   "otp": code, "otp_expiry": str(ttl_min)}
         try:
-            client = self._client or httpx.AsyncClient(timeout=10)
-            try:
-                r = await client.post(MSG91_OTP_URL, params=params,
-                                      headers={"authkey": self.auth_key, "accept": "application/json"})
-            finally:
-                if self._client is None:
-                    await client.aclose()
+            r = await (self._client or shared_client()).post(MSG91_OTP_URL, params=params, timeout=10,
+                                                            headers={"authkey": self.auth_key, "accept": "application/json"})
             body = r.json() if r.content else {}
             if r.status_code == 200 and body.get("type") == "success":
                 return SendResult(True, self.name, self.channel, ref=body.get("request_id"))

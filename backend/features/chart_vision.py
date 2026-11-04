@@ -10,9 +10,9 @@ MEDIA = {b"\x89PNG": "image/png", b"\xff\xd8\xff": "image/jpeg", b"RIFF": "image
 
 
 class ChartError(Exception):
-    def __init__(self, code: str, msg: str):
+    def __init__(self, code: str, msg: str, retry_after: int | None = None):
         super().__init__(msg)
-        self.code, self.msg = code, msg
+        self.code, self.msg, self.retry_after = code, msg, retry_after
 
 
 def sniff(data: bytes) -> str:
@@ -58,8 +58,11 @@ async def analyze_chart(data: bytes, symbol: str = "") -> dict:
         out = await llm.complete_json(task="chart", system="You are a careful chart reader. Reply in JSON only.",
                                       prompt=PROMPT.format(symbol_hint=hint), fake=lambda: fake_read(symbol),
                                       model="vision", max_tokens=1500, images=[(media, data)])
+    except llm.AIBusy as e:
+        raise ChartError("unavailable", "Lots of people are reading charts right now. Try again in a moment.",
+                         retry_after=e.retry_after) from e
     except llm.LLMError as e:
-        raise ChartError("unavailable", "The chart reader didn't respond. Try again in a minute.") from e
+        raise ChartError("unavailable", "The chart reader didn't respond. Try again in a minute.", retry_after=15) from e
     if out.get("trend") not in ("up", "down", "sideways"):
         out["trend"] = "sideways"
     return out

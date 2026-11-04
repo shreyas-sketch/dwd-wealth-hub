@@ -1,7 +1,7 @@
 // Admin panel (/admin/*), role admin only. Bullzeye admin look: left menu groups, phone drawer.
 import { useState } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "@/context/AuthContext";
+import { loginRedirect, useAuth } from "@/context/AuthContext";
 import { ThemeToggle } from "@/context/ThemeContext";
 import Logo from "../components/Logo";
 import { Button, Card, Spinner } from "../components/ui";
@@ -111,11 +111,11 @@ function Shell() {
 }
 
 export default function AdminApp() {
-  const { user, checking, logout } = useAuth();
+  const { user, checking, signedOut, logout } = useAuth();
   const nav = useNavigate();
   const { pathname } = useLocation();
   if (checking || user === null) return <div className="min-h-screen bg-bz-bg grid place-items-center"><Spinner /></div>;
-  if (!user) return <Navigate to={`/admin/login?next=${encodeURIComponent(pathname)}`} replace />;
+  if (!user) return <Navigate to={loginRedirect("/admin/login", signedOut, pathname)} replace />;
   if (user.role !== "admin") {
     return (
       <div className="min-h-screen bg-bz-bg font-bz text-bz-ink grid place-items-center p-5">

@@ -78,7 +78,8 @@ def test_autopilot_job_buys_and_short_usdt(client, mdb):
     run(mdb.dca_plans.update_many({}, {"$set": {"next_at": utcnow() - timedelta(minutes=1)}}))
     from features.autopilot import job_buys
     res = run(job_buys(Ctx(mdb, utcnow())))
-    assert res == {"bought": 1, "failed": 1}
+    assert {k: res[k] for k in ("bought", "failed", "due")} == {"bought": 1, "failed": 1, "due": 2}
+    assert res["next_due_at"]                   # both plans moved to their next slot
     st = client.get("/api/autopilot").json()
     by = {x["id"]: x for x in st["plans"]}
     assert by[p["id"]]["buys"] == 1 and by[p["id"]]["invested_inr"] == 5000

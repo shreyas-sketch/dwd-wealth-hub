@@ -84,9 +84,44 @@ async def top_coins(n: int = 10, exclude_stables: bool = True) -> list[dict]:
     return rows[:n]
 
 
+PRICE_TTL = 60
+
+
 async def prices(symbols: list[str]) -> dict[str, dict]:
+    """Per-coin cache: each coin's quote is cached on its own key, and only the coins missing from the cache are
+    fetched, in one upstream call (single-flight per missing set). Before, every distinct combination of coins
+    (a member's plan, a basket, a watchlist…) was its own cache key and its own CoinGecko call. A coin the upstream
+    doesn't know is remembered as missing for the same TTL so it isn't re-requested on every page view."""
     syms = sorted({s.upper() for s in symbols if s and s.upper() not in ("USDT",)})
-    out = await _cached("px:" + ",".join(syms), 60, lambda: provider().prices(syms)) if syms else {}
+    out: dict[str, dict] = {}
+    now = time.time()
+    missing = []
+    for s in syms:
+        hit = _cache.get(f"px1:{s}")
+        if hit and now - hit[0] < PRICE_TTL:
+            if hit[1] is not None:
+                out[s] = hit[1]
+        else:
+            missing.append(s)
+    if missing:
+        try:
+            got = await _cached("px:" + ",".join(missing), PRICE_TTL, lambda: provider().prices(missing))
+        except Exception:
+            # upstream down / over budget: serve each coin's last known quote (up to 10× TTL), never re-stamped
+            stale = {}
+            for s in missing:
+                hit = _cache.get(f"px1:{s}")
+                if hit and hit[1] and now - hit[0] < PRICE_TTL * 10:
+                    stale[s] = hit[1]
+            if not stale and not out:
+                raise
+            out.update(stale)
+        else:
+            t = time.time()
+            for s in missing:
+                _cache[f"px1:{s}"] = (t, got.get(s))
+                if got.get(s):
+                    out[s] = got[s]
     out = dict(out)
     if any(s.upper() == "USDT" for s in symbols):
         out["USDT"] = {"symbol": "USDT", "name": "Tether", "price_usd": 1.0, "change_24h": 0.0}
