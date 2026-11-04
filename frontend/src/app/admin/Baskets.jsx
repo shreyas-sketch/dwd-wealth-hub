@@ -18,7 +18,7 @@ function Form({ value: v, onChange }) {
       <Field label="Description"><textarea className={textareaCls} rows={3} value={v.description} onChange={set("description")} /></Field>
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <span className="font-bzmono text-[11px] uppercase tracking-[0.16em] text-bz-muted">Coins and weights</span>
+          <span className="text-[14px] font-semibold text-bz-muted">Coins and weights</span>
           <span className={`text-[13px] font-semibold tabular ${total === 100 ? "text-bz-accent" : "text-bz-miss"}`} data-testid="basket-weight-sum">Total {total}%{total === 100 ? "" : " (must be 100)"}</span>
         </div>
         <div className="space-y-2">

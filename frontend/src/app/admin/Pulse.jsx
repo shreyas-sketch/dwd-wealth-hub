@@ -3,8 +3,8 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { inr, sdate } from "@/lib/format";
 import { PLAN_LABEL } from "@/lib/features";
 import { AXIS_TICK, C, TOOLTIP } from "../components/chart";
-import { Card, Label } from "../components/ui";
-import { AdminLoadable, Kpi, useAdmin } from "./shared";
+import { Card } from "../components/ui";
+import { AdminH, AdminLoadable, Kpi, KpiGrid, useAdmin } from "./shared";
 
 function Bars({ rows, labelKey, valueKey = "count", label }) {
   const list = rows || [];
@@ -30,7 +30,7 @@ export default function Pulse() {
         const k = d.kpis || {};
         return (
           <div className="space-y-5">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KpiGrid>
               <Kpi label="Users" value={Number(k.users_total ?? 0).toLocaleString("en-IN")} />
               <Kpi label="Signups today" value={k.signups_today} sub={`${k.signups_7d ?? 0} in 7 days`} />
               <Kpi label="On trial" value={k.trial_active} />
@@ -38,10 +38,10 @@ export default function Pulse() {
               <Kpi label="₹2,000 active" value={k.lite_active} />
               <Kpi label="₹5,000 active" value={k.pro_active} />
               <Kpi label="Paid conversion" value={k.paid_conversion_pct != null ? `${k.paid_conversion_pct}%` : "—"} tone="up" />
-              <Kpi label="Signups 7d" value={k.signups_7d} />
-            </div>
+              <Kpi label="Signups, last 7 days" value={k.signups_7d} />
+            </KpiGrid>
             <Card>
-              <Label>Signups by day</Label>
+              <AdminH>Signups by day</AdminH>
               {(d.signups_by_day || []).length ? (
                 <div className="h-60 -mx-2">
                   <ResponsiveContainer width="100%" height="100%">
@@ -57,9 +57,9 @@ export default function Pulse() {
               ) : <p className="text-sm text-bz-muted">No signups yet.</p>}
             </Card>
             <div className="grid gap-4 md:grid-cols-3">
-              <Card><Label>By source</Label><Bars rows={d.by_source} labelKey="source" label="Signups by source" /></Card>
-              <Card><Label>Plan mix</Label><Bars rows={(d.plan_mix || []).map((r) => ({ ...r, __label: PLAN_LABEL[r.plan] || r.plan }))} labelKey="plan" label="Plan mix" /></Card>
-              <Card><Label>Feature usage · 7 days</Label><Bars rows={d.feature_usage_7d} labelKey="feature" label="Feature usage" /></Card>
+              <Card><AdminH>Where people came from</AdminH><Bars rows={d.by_source} labelKey="source" label="Signups by source" /></Card>
+              <Card><AdminH>Plan mix</AdminH><Bars rows={(d.plan_mix || []).map((r) => ({ ...r, __label: r.plan === "trial" ? "On trial" : PLAN_LABEL[r.plan] || r.plan }))} labelKey="plan" label="Plan mix" /></Card>
+              <Card><AdminH>Tools used, last 7 days</AdminH><Bars rows={d.feature_usage_7d} labelKey="feature" label="Feature usage" /></Card>
             </div>
           </div>
         );

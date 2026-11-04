@@ -24,9 +24,9 @@ export function PlanCard({ p, current, highlight, onBuy, busy, compact = false }
     <Card className={`flex flex-col ${highlight ? "border-bz-gold border-2" : ""}`} data-testid={`plan-${p.id}`}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h3 className="font-bzserif text-[22px] font-semibold leading-tight">{p.name || PLAN_LABEL[p.id]}</h3>
+          <h3 className="font-bzdisplay text-[22px] font-bold leading-tight">{p.name || PLAN_LABEL[p.id]}</h3>
           <div className="mt-1.5">
-            <span className="text-[30px] font-semibold tabular">{inr(p.price_inr || 0, 0)}</span>
+            <span className="font-bzdisplay text-[31px] font-bold tabular">{inr(p.price_inr || 0, 0)}</span>
             <span className="text-bz-muted text-[14px]">{p.price_inr ? " + GST" : ""} / {p.period || "month"}</span>
             {p.total_inr ? <div className="text-[12.5px] text-bz-muted tabular">{inr(p.total_inr, 0)} a month incl. {p.gst_pct || 18}% GST</div> : null}
           </div>

@@ -72,7 +72,7 @@ export function LockCard({ feature, planNeeded, kind = "locked", used, limit, ms
       <div className="flex items-start gap-3">
         <span className="w-10 h-10 rounded-full bg-bz-gold-tint text-bz-gold-deep grid place-items-center shrink-0"><Lock className="w-5 h-5" aria-hidden /></span>
         <div className="min-w-0">
-          <p className="font-bzserif text-[22px] font-semibold leading-tight">{info.name}</p>
+          <p className="font-bzdisplay text-[22px] font-bold leading-tight">{info.name}</p>
           {isLimit ? (
             <p className="text-[15px] mt-1.5">
               {used != null && limit != null ? `You've used ${used} of ${limit} this month.` : msg || "You've reached this month's limit."}
@@ -148,7 +148,7 @@ export function WatchStar({ symbol, watched, wl }) {
 
 export function BackLink({ to, children }) {
   return (
-    <Link to={to} className="inline-flex items-center gap-1.5 font-bzmono text-[11px] uppercase tracking-[0.2em] text-bz-muted hover:text-bz-ink min-h-[40px]">
+    <Link to={to} className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-bz-muted hover:text-bz-ink min-h-[40px]">
       <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M15 6l-6 6 6 6" /></svg>
       {children}
     </Link>

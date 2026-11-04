@@ -38,14 +38,14 @@ function StepsEditor({ rows, onChange }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="font-bzmono text-[11px] uppercase tracking-[0.16em] text-bz-muted">Steps</span>
+        <span className="text-[14px] font-semibold text-bz-muted">Steps</span>
         <span className="text-[12px] text-bz-muted">Members' ticks stay with each step when you reorder.</span>
       </div>
       {rows.length === 0 && <p className="text-[13px] text-bz-muted mb-2">No steps yet.</p>}
       <ol className="space-y-2" data-testid="airdrop-steps">
         {rows.map((r, i) => (
           <li key={r.key} className="flex gap-1.5 items-center">
-            <span className="w-6 text-right font-bzmono text-[12px] text-bz-muted shrink-0">{i + 1}.</span>
+            <span className="w-6 text-right text-[14px] font-semibold text-bz-muted tabular shrink-0">{i + 1}.</span>
             <Input value={r.text} onChange={(e) => update(i, { text: e.target.value })} onPaste={onPaste(i)}
               placeholder="e.g. Create a wallet" className="flex-1 min-w-0" aria-label={`Step ${i + 1}`} data-testid={`airdrop-step-${i}`} />
             <button type="button" aria-label={`Move step ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}

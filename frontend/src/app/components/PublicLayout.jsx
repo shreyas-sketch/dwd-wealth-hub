@@ -14,15 +14,15 @@ export default function PublicLayout({ children, wide = false }) {
   useEffect(() => { track("page_view", { path: pathname }); }, [pathname]);
   return (
     <div className="min-h-screen flex flex-col bg-bz-bg font-bz text-bz-ink antialiased">
-      <header className="sticky top-0 z-30 bg-bz-bg border-b border-bz-line">
+      <header className="sticky top-0 z-30 bg-bz-bg/95 backdrop-blur border-b border-bz-line">
         <div className={`mx-auto ${wide ? "max-w-[1120px]" : "max-w-[980px]"} px-4 md:px-8 h-16 flex items-center justify-between gap-3`}>
           <Link to="/" aria-label={`${brand.name} home`}><Logo word="hidden min-[360px]:inline" /></Link>
           <div className="flex items-center gap-2">
             <ThemeToggle />
             {user ? (
-              <Link to="/app" data-testid="open-app" className="inline-flex items-center h-11 px-4 rounded-bzbtn bg-bz-accent text-bz-on-accent font-bzmono text-[11px] uppercase tracking-[0.16em]">Open app</Link>
+              <Link to="/app" data-testid="open-app" className="inline-flex items-center h-11 px-5 rounded-full bg-bz-btn text-bz-on-btn text-[15px] font-semibold">Open app</Link>
             ) : (
-              <Link to="/login" data-testid="header-login" className="inline-flex items-center h-11 px-4 rounded-bzbtn border border-bz-line-strong font-bzmono text-[11px] uppercase tracking-[0.16em] hover:bg-bz-inset">Log in</Link>
+              <Link to="/login" data-testid="header-login" className="inline-flex items-center h-11 px-5 rounded-full bg-bz-btn text-bz-on-btn text-[15px] font-semibold hover:opacity-90">Log in or sign up</Link>
             )}
           </div>
         </div>
