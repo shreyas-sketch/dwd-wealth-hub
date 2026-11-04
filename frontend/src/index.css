@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==== Coinzeye theme tokens ====
+   Token names are Bullzeye's (--bz-*) so the copied components work unchanged.
+   Green = bullish / up / buttons, red = bearish / down, orange ("gold" tokens) = brand marker,
+   active nav and highlights. */
+:root,
+[data-theme="light"] {
+  --bz-bg: #ffffff;
+  --bz-panel: #f4f6fa;
+  --bz-card: #ffffff;
+  --bz-ink: #141821;
+  --bz-muted: #5f6675;
+  --bz-line: #e3e7ef;
+  --bz-line-strong: #cbd2de;
+  --bz-inset: #eef1f7;
+  --bz-accent: #1e8e5a;
+  --bz-accent-deep: #176f46;
+  --bz-accent-tint: #e6f3ec;
+  --bz-on-accent: #ffffff;
+  --bz-miss: #c43d3d;
+  --bz-miss-tint: #f9e6e6;
+  --bz-gold: #f08a0b;
+  --bz-gold-deep: #b4630a;
+  --bz-gold-tint: #fdf0df;
+  --bz-scrim: rgba(20, 24, 33, 0.4);
+  --card-shadow: 0 2px 12px rgba(20, 40, 90, 0.06);
+  --focus-ring: 0 0 0 2px rgba(240, 138, 11, 0.4);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bz-bg: #0b0d12;
+  --bz-panel: #131722;
+  --bz-card: #1a1f2c;
+  --bz-ink: #eef1f6;
+  --bz-muted: #98a0b0;
+  --bz-line: #252b38;
+  --bz-line-strong: #353d4d;
+  --bz-inset: rgba(247, 147, 26, 0.1);
+  --bz-accent: #4ade80;
+  --bz-accent-deep: #86efac;
+  --bz-accent-tint: rgba(74, 222, 128, 0.12);
+  --bz-on-accent: #0b0d12;
+  --bz-miss: #f87171;
+  --bz-miss-tint: rgba(248, 113, 113, 0.12);
+  --bz-gold: #f7a23b;
+  --bz-gold-deep: #f7a23b;
+  --bz-gold-tint: rgba(247, 162, 59, 0.12);
+  --bz-scrim: rgba(0, 0, 0, 0.6);
+  --card-shadow: none;
+  --focus-ring: 0 0 0 2px rgba(247, 162, 59, 0.5);
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  background-color: var(--bz-bg);
+}
+
+body {
+  margin: 0;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--bz-ink);
+  min-height: 100vh;
+  transition: background-color 250ms ease, color 250ms ease;
+}
+
+*:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+input,
+select,
+textarea {
+  color: var(--bz-ink);
+}
+
+/* Native number inputs: no spinners (people type amounts). */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@layer utilities {
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .rise-in {
+    animation: rise-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+  @keyframes cz-pulse {
+    0%, 100% { opacity: 0.55; }
+    50% { opacity: 1; }
+  }
+  .skeleton {
+    background: var(--bz-inset);
+    border-radius: 10px;
+    animation: cz-pulse 1.4s ease-in-out infinite;
+  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-in, .skeleton { animation: none !important; }
+}

@@ -1,0 +1,28 @@
+# Dependencies / builds
+node_modules/
+frontend/build/
+.cache/
+coverage/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+.pytest_cache/
+
+# Secrets — never commit. Templates (.env.example) are kept.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Archives
+*.zip
+*.tar.gz

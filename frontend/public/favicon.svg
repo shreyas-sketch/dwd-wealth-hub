@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Coinzeye mark">
+  <!-- Original mark: an orange coin with an eye-and-target motif. -->
+  <circle cx="32" cy="32" r="30" fill="#F08A0B"/>
+  <circle cx="32" cy="32" r="25" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="2"/>
+  <path d="M10 32c5.5-8.5 13-13 22-13s16.5 4.5 22 13c-5.5 8.5-13 13-22 13S15.5 40.5 10 32z" fill="#FFFFFF"/>
+  <circle cx="32" cy="32" r="8.5" fill="#141821"/>
+  <circle cx="32" cy="32" r="4.2" fill="none" stroke="#F08A0B" stroke-width="1.8"/>
+  <circle cx="32" cy="32" r="1.6" fill="#F08A0B"/>
+  <path d="M32 21.5v4M32 38.5v4" stroke="#141821" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

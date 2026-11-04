@@ -1,0 +1,33 @@
+# Coinzeye backend — runtime dependencies (pinned).
+
+# Web
+fastapi==0.115.12
+starlette==0.46.2
+uvicorn[standard]==0.34.2
+python-multipart==0.0.20
+email-validator==2.2.0
+pydantic==2.11.4
+
+# Data store
+motor==3.7.1
+pymongo==4.12.1
+dnspython==2.7.0
+
+# Auth and secrets
+PyJWT==2.10.1
+bcrypt==4.3.0
+cryptography==44.0.3
+
+# LLM
+anthropic==0.51.0
+
+# HTTP
+httpx==0.28.1
+
+# Scheduling (in-process)
+APScheduler==3.11.0
+
+# Ops
+python-dotenv==1.1.0
+sentry-sdk[fastapi]==2.27.0
+tzdata==2025.2

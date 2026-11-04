@@ -1,0 +1,9 @@
+{
+  "short_name": "Coinzeye",
+  "name": "Coinzeye — Your crypto co-pilot",
+  "icons": [{ "src": "logo.svg", "type": "image/svg+xml", "sizes": "any" }],
+  "start_url": "/app",
+  "display": "standalone",
+  "theme_color": "#F08A0B",
+  "background_color": "#ffffff"
+}
