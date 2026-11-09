@@ -98,6 +98,11 @@ async def seed_demo(db) -> dict:
         if v:
             await db.verdicts.update_one({"_id": v["_id"]}, {"$set": {
                 "changed_from": "Bearish" if v["verdict"] != "Bearish" else "Neutral"}})
+    if not await db.verdict_outcomes.count_documents({}):
+        # 60 days of rule-made verdicts (each from the history that day could see), scored, for Admin › Verdict accuracy
+        from features.accuracy import job_score, seed_backtest
+        out["verdicts_backtest"] = await seed_backtest(db)
+        out["verdict_scoring"] = await job_score(Ctx(db, now))
     if not await db.picks.count_documents({}):
         from features.verdicts import suggest_picks, week_of
         import market

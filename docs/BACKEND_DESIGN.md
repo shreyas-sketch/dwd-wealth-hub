@@ -80,6 +80,23 @@ Admin settings collection `settings` `{_id: "app", trial_days, scenario_rates, c
 - news: job every 2 h: fetch RSS, tag coins by name/symbol, LLM summary + what_it_means + sentiment (batch); `yours` by user coins;
   `/news/check` LLM verdict real/hype/unclear.
 
+## Market data sources (9 Nov 2026)
+`market/__init__.py` routes each call: prices and daily history go to Twelve Data (`market/twelvedata.py`) when
+`TWELVE_DATA_API_KEY` is set (or `MARKET_PRICE_SOURCE=twelvedata`), otherwise CoinGecko. Coins Twelve Data can't serve
+(unknown pair, out of credits, error) are fetched from CoinGecko in the same call. Top coins, search, coin details,
+contract lookup, market totals and trending always use CoinGecko; Twelve Data has none of them. Bitcoin's all-time
+high for the cycle meter falls back to the highest daily close when the price source has no ATH field.
+Twelve Data credits: 1 per coin per quote or history call; `TWELVE_DATA_CREDITS_PER_MIN` is split across workers.
+
+## Verdict hit rate (9 Nov 2026)
+Job `verdict_scoring` (05:45 IST) scores every verdict at 7 and 30 days into `verdict_outcomes`: start = the price
+stored with the verdict, end = the live price for verdicts made exactly 7/30 days ago (same time of day), or the daily
+close for days the job missed. Right = Bullish up more than the band, Bearish down more than it, Neutral inside it
+(±3% at 7 days, ±6% at 30). `/admin/verdicts/accuracy` reports hit rate with a 95% Wilson range, the "chance" rate of
+always giving each verdict, the edge over it, Bullish-minus-Bearish average move, and hit rate by confidence and coin.
+QA mode seeds 60 days of rule-made verdicts (`backtest: true`) so the screen has data; those numbers come from fake
+random-walk prices and mean nothing.
+
 ## Admin
 Routes per contract. Admin = `users.role == "admin"`: phones in `ADMIN_PHONES` get admin on OTP login; staff login by
 `ADMIN_EMAIL` / `ADMIN_PASSWORD` (bcrypt, seeded on startup). Jobs registry with last-run rows (`job_runs`).

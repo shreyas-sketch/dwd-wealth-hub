@@ -44,6 +44,8 @@ def _reset_caches():
     from market import live
     live.CG_BUCKET.reset()
     live._ids.clear()
+    from market import twelvedata as td
+    td.reset_state()
     from accounts import otp_service
     for b in otp_service.BREAKERS.values():
         b.success()

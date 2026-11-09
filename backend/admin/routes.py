@@ -441,6 +441,14 @@ async def delete_event(event_id: str, _: dict = Admin):
     return {"ok": True}
 
 
+# ------------------------------------------------------------------ verdict accuracy ----
+@router.get("/verdicts/accuracy")
+async def verdict_accuracy(days: int = Query(90, ge=7, le=365), _: dict = Admin):
+    """Hit rate of the daily verdicts at 7 and 30 days, against chance (features/accuracy.py)."""
+    from features import accuracy
+    return await accuracy.summary(db(), days)
+
+
 # ------------------------------------------------------------------ Monday picks ----
 class PickIn(BaseModel):
     symbol: str = Field(..., max_length=15)

@@ -186,6 +186,9 @@ async def job_daily(ctx) -> dict:
     d = ctx.db
     day = ctx.now.astimezone(IST).date().isoformat()
     coins = await market.top_coins(10)
+    # The start price for hit-rate scoring comes from the same price source the scoring job reads later
+    # (Twelve Data when configured), not from the market-cap list.
+    live = await market.prices([c["symbol"] for c in coins]) if coins else {}
     done = changed = 0
     for c in coins:
         sym = c["symbol"]
@@ -200,7 +203,9 @@ async def job_daily(ctx) -> dict:
         doc = {"_id": f"{day}:{sym}", "date": day, "symbol": sym, "name": c["name"], "rank": c.get("rank"),
                "verdict": out["verdict"], "confidence": int(out.get("confidence") or 50),
                "summary": out.get("summary"), "bull": out.get("bull", [])[:3], "bear": out.get("bear", [])[:3],
-               "chair": out.get("chair"), "price_usd": c.get("price_usd"),
+               "chair": out.get("chair"),
+               "price_usd": (live.get(sym) or {}).get("price_usd") or c.get("price_usd"),
+               "price_source": (live.get(sym) or {}).get("source") or market.price_source(),
                "indicators": {k: (round(v, 6) if isinstance(v, float) else v) for k, v in ind.items()},
                "changed_from": changed_from, "created_at": ctx.now}
         await d.verdicts.replace_one({"_id": doc["_id"]}, doc, upsert=True)
@@ -434,6 +439,13 @@ def cycle(today: date, btc_price: Optional[float], ath: Optional[float]) -> dict
             "drawdown_from_ath_pct": dd, "position_pct": round(min(100.0, since / span * 100), 1)}
 
 
+async def _btc_ath() -> Optional[float]:
+    try:
+        return await market.ath_usd("BTC")
+    except Exception:  # noqa: BLE001 — the cycle meter still works without the high
+        return None
+
+
 async def build_pulse(d) -> dict:
     syms = ["BTC", "ETH", "SOL", "XRP"]
     px = await market.prices(syms)
@@ -448,7 +460,7 @@ async def build_pulse(d) -> dict:
             "total_mcap_usd": g.get("total_mcap_usd"), "btc_dominance_pct": r2(g.get("btc_dominance_pct"), 1),
             "fear_greed": fg,
             "etf_flows": {"date": etf["date"], "net_usd_m": etf["net_usd_m"], "note": etf.get("note")} if etf else None,
-            "cycle": cycle(utcnow().astimezone(IST).date(), btc.get("price_usd"), btc.get("ath_usd")),
+            "cycle": cycle(utcnow().astimezone(IST).date(), btc.get("price_usd"), btc.get("ath_usd") or await _btc_ath()),
             "as_of": iso(utcnow())}
 
 

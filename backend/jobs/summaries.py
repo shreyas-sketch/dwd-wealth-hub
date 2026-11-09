@@ -82,6 +82,8 @@ def _radar(r: dict) -> str:
 FORMATTERS: dict[str, Callable[[dict], str]] = {
     "verdicts_daily": _verdicts,
     "exchange_reverify": _reverify,
+    "verdict_scoring": lambda r: (f"Scored {_n(r.get('scored_7d'), 'verdict')} at 7 days and {_n(r.get('scored_30d'), 'verdict')} at 30 days."
+                                  + (f" {_n(r.get('skipped'), 'verdict')} had no price yet." if r.get("skipped") else "")),
     "autopilot_buys": _autopilot,
     "paper_snapshot": lambda r: f"{_n(r.get('snapshots'), 'Paper Money account')} valued.",
     "crash_coach": _crash,

@@ -85,21 +85,27 @@ cd ../backend && python ../scripts/qa_server.py     # http://localhost:8765, sam
    - MSG91 / AiSensy for OTP
    - `ADMIN_PHONES`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`
    - `BRAND_NAME`
-2. **Check each live data source once with internet access.** Parsing is tested only against mocked responses:
+2. **Market data.** Set `TWELVE_DATA_API_KEY` to take prices and history from Twelve Data. The free Basic plan
+   (8 credits a minute, 800 a day) is too small for a webinar: use Grow or above and set `TWELVE_DATA_CREDITS_PER_MIN`.
+   CoinGecko is still needed for rankings, coin details, market totals and trending.
+3. **Verdict hit rate.** Admin › Verdict accuracy fills in from 7 days after launch (30-day numbers after a month).
+   Don't quote any figure until it shows at least 30 calls; check that the edge over chance is positive before
+   marketing the verdicts.
+4. **Check each live data source once with internet access.** Parsing is tested only against mocked responses:
    - CoinGecko (prices, history, search, trending, global)
    - alternative.me (Fear & Greed)
    - Binance and KuCoin symbol lists
    - GoPlus (contract checks)
    - RSS news feeds
-3. **P2P rates.** The Binance and KuCoin P2P endpoints are the ones their own web pages use, not documented APIs. Test them from the server. If they block servers, set `P2P_MODE=off`.
-4. **ETF flows.** There's no data feed. The team types them in under Admin › ETF flows.
-5. **Token unlocks.** No vendor is wired in. Unlocks go in by hand under Admin › Events until a vendor is chosen.
-6. **Exchange keys.**
+5. **P2P rates.** The Binance and KuCoin P2P endpoints are the ones their own web pages use, not documented APIs. Test them from the server. If they block servers, set `P2P_MODE=off`.
+6. **ETF flows.** There's no data feed. The team types them in under Admin › ETF flows.
+7. **Token unlocks.** No vendor is wired in. Unlocks go in by hand under Admin › Events until a vendor is chosen.
+8. **Exchange keys.**
    - Confirm whether KuCoin or Binance trade keys need a fixed server IP. If they do, give Railway a static outbound IP and tell users to whitelist it.
    - Move the vault master key to a KMS before public launch.
-7. **Workers.** Run 2 or more web workers (`WEB_CONCURRENCY`, default 2). A database lock makes each scheduled job run once. Load test results are in `docs/LOAD_TEST.md`.
-8. **Razorpay pricing.** Prices are ₹2,000 + GST and ₹5,000 + GST. Create the Razorpay plans at ₹2,360 and ₹5,900 a month.
-9. **Counsel.** Get a view on the coin-level calls in Verdicts, Monday Picks, Baskets and the Radar, and on placing orders on users' own exchange accounts.
+9. **Workers.** Run 2 or more web workers (`WEB_CONCURRENCY`, default 2). A database lock makes each scheduled job run once. Load test results are in `docs/LOAD_TEST.md`.
+10. **Razorpay pricing.** Prices are ₹2,000 + GST and ₹5,000 + GST. Create the Razorpay plans at ₹2,360 and ₹5,900 a month.
+11. **Counsel.** Get a view on the coin-level calls in Verdicts, Monday Picks, Baskets and the Radar, and on placing orders on users' own exchange accounts.
 
 ## 5. Content the team loads in Admin
 

@@ -8,6 +8,7 @@ import Logo from "../components/Logo";
 import { Button, Card, Spinner } from "../components/ui";
 import Pulse from "./Pulse";
 import Webinar from "./Webinar";
+import AdminAccuracy from "./Accuracy";
 import Users from "./Users";
 import AdminAirdrops from "./Airdrops";
 import AdminBaskets from "./Baskets";
@@ -22,7 +23,7 @@ import AdminVendors from "./Vendors";
 import AdminJobs from "./Jobs";
 
 export const GROUPS = [
-  { name: "Overview", pages: [{ path: "", label: "Pulse", el: Pulse }, { path: "webinar", label: "Webinar", el: Webinar }] },
+  { name: "Overview", pages: [{ path: "", label: "Pulse", el: Pulse }, { path: "webinar", label: "Webinar", el: Webinar }, { path: "accuracy", label: "Verdict accuracy", el: AdminAccuracy }] },
   { name: "People", pages: [{ path: "users", label: "Users", el: Users }] },
   { name: "Content", pages: [
     { path: "airdrops", label: "Airdrops", el: AdminAirdrops },
@@ -44,18 +45,18 @@ const ALL = GROUPS.flatMap((g) => g.pages);
 
 function SideNav({ onGo }) {
   return (
-    <div className="flex flex-col gap-4 h-full">
+    <div className="flex flex-col gap-3 h-full min-h-0">
       <div className="px-2 flex flex-col gap-1">
         <Link to="/admin" onClick={onGo}><Logo onHero /></Link>
         <span className="text-[14px] font-semibold text-bz-gold">Staff panel</span>
       </div>
-      <nav aria-label="Admin" className="flex flex-col gap-3 overflow-y-auto">
+      <nav aria-label="Admin" className="flex flex-col gap-2 overflow-y-auto min-h-0">
         {GROUPS.map((g) => (
           <div key={g.name}>
             <div className="px-3 pb-1 text-[13px] font-semibold text-bz-hero-muted">{g.name}</div>
             {g.pages.map((p) => (
               <NavLink key={p.path} to={`/admin${p.path ? `/${p.path}` : ""}`} end onClick={onGo} data-testid={`admin-nav-${p.path || "pulse"}`}
-                className={({ isActive }) => `relative block h-10 leading-10 px-3 rounded-bzbtn text-[15px] ${isActive ? "bg-white/10 text-bz-hero-ink font-semibold" : "text-bz-hero-muted hover:bg-white/5 hover:text-bz-hero-ink"}`}>
+                className={({ isActive }) => `relative block h-9 leading-9 px-3 rounded-bzbtn text-[15px] ${isActive ? "bg-white/10 text-bz-hero-ink font-semibold" : "text-bz-hero-muted hover:bg-white/5 hover:text-bz-hero-ink"}`}>
                 {({ isActive }) => (<>{isActive && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-bz-gold" />}{p.label}</>)}
               </NavLink>
             ))}

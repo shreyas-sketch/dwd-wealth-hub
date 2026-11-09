@@ -21,6 +21,7 @@ log = logging.getLogger("jobs")
 # name → (label, schedule, "module:function")
 JOBS: dict[str, tuple[str, tuple, str]] = {
     "verdicts_daily": ("Daily AI verdicts (top 10 coins)", ("daily", 5, 30), "features.verdicts:job_daily"),
+    "verdict_scoring": ("Score past verdicts (hit rate)", ("daily", 5, 45), "features.accuracy:job_score"),
     "exchange_reverify": ("Re-check linked exchange keys", ("daily", 5, 40), "features.autopilot:job_reverify"),
     "autopilot_buys": ("SIP Autopilot buys", ("daily", 10, 0), "features.autopilot:job_buys"),
     "paper_snapshot": ("Paper Money daily values", ("daily", 23, 50), "features.paper:job_snapshot"),

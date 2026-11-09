@@ -373,3 +373,85 @@ def test_airdrop_create_keeps_supplied_ids(client):
     assert [s["id"] for s in a["steps"]] == ["s1", "s2"]
     b = _airdrop(client, [{"id": "s2", "text": "Two"}, {"id": "s1", "text": "One"}], a["id"])
     assert [(s["id"], s["text"]) for s in b["steps"]] == [("s2", "Two"), ("s1", "One")]
+
+
+# ---------------------------------------------------------------- verdict hit rate ----
+def test_judge_bands_and_wilson():
+    from features.accuracy import judge, wilson
+    assert judge("Bullish", 3.1, 7) is True and judge("Bullish", 2.9, 7) is False
+    assert judge("Bearish", -6.5, 30) is True and judge("Bearish", -5.0, 30) is False
+    assert judge("Neutral", 2.0, 7) is True and judge("Neutral", -3.5, 7) is False
+    assert wilson(0, 0) == (None, None)
+    lo, hi = wilson(6, 10)
+    assert 30 < lo < 60 < hi < 85                      # 6 of 10 is compatible with anything from ~31% to ~83%
+
+
+async def test_scoring_job_live_and_missed_days(mdb, monkeypatch):
+    from datetime import timedelta
+
+    import market
+    from features import accuracy
+    from growth.clock import IST, utcnow
+    from jobs.registry import Ctx
+    now = utcnow()
+    today = now.astimezone(IST).date()
+    d7 = (today - timedelta(days=7)).isoformat()                  # exactly 7 days ago → live price
+    d9 = (today - timedelta(days=9)).isoformat()                  # missed → daily close on d9 + 7
+    await mdb.verdicts.insert_many([
+        {"_id": f"{d7}:BTC", "date": d7, "symbol": "BTC", "verdict": "Bullish", "confidence": 68, "price_usd": 100.0},
+        {"_id": f"{d9}:ETH", "date": d9, "symbol": "ETH", "verdict": "Bearish", "confidence": 59, "price_usd": 50.0},
+        {"_id": f"{d9}:SOL", "date": d9, "symbol": "SOL", "verdict": "Neutral", "confidence": 50}])   # no price: skipped
+
+    async def prices(syms):
+        return {"BTC": {"symbol": "BTC", "price_usd": 110.0}}
+
+    async def history(sym, days):
+        target = (today - timedelta(days=2)).isoformat()
+        return [(target, 45.0)] if sym == "ETH" else []
+    monkeypatch.setattr(market, "prices", prices)
+    monkeypatch.setattr(market, "history", history)
+    r = await accuracy.job_score(Ctx(mdb, now))
+    assert r == {"scored_7d": 2, "scored_30d": 0, "skipped": 1}
+    btc = await mdb.verdict_outcomes.find_one({"_id": f"{d7}:BTC:7"})
+    eth = await mdb.verdict_outcomes.find_one({"_id": f"{d9}:ETH:7"})
+    assert btc["return_pct"] == 10.0 and btc["correct"] is True and btc["end_basis"] == "live"
+    assert eth["return_pct"] == -10.0 and eth["correct"] is True and eth["end_basis"] == "daily_close"
+    assert (await accuracy.job_score(Ctx(mdb, now)))["scored_7d"] == 0          # already scored: not redone
+
+
+async def test_summary_compares_with_chance(mdb):
+    from datetime import timedelta
+
+    from features import accuracy
+    from growth.clock import IST, utcnow
+    day = (utcnow().astimezone(IST).date() - timedelta(days=10)).isoformat()
+    rows = []
+    # 10 coin-weeks: 6 rose >3%, 4 fell >3%. Bullish was said 5 times and right 4 times.
+    for i, (verdict, ret) in enumerate([("Bullish", 5)] * 4 + [("Bullish", -5)] + [("Bearish", 5)] * 2
+                                       + [("Bearish", -5)] * 3):
+        rows.append({"_id": f"{day}:C{i}:7", "date": day, "symbol": f"C{i}", "verdict": verdict, "confidence": 72 if i < 2 else 55,
+                     "horizon": 7, "price_start": 1, "price_end": 1, "return_pct": ret,
+                     "correct": accuracy.judge(verdict, ret, 7), "end_basis": "live", "scored_at": utcnow()})
+    await mdb.verdict_outcomes.insert_many(rows)
+    s = await accuracy.summary(mdb, 30)
+    h7 = next(h for h in s["horizons"] if h["horizon_days"] == 7)
+    bull = next(v for v in h7["by_verdict"] if v["verdict"] == "Bullish")
+    bear = next(v for v in h7["by_verdict"] if v["verdict"] == "Bearish")
+    assert h7["calls"] == 10 and h7["right"] == 7 and h7["enough_data"] is False
+    assert bull["hit_rate_pct"] == 80.0 and bull["chance_pct"] == 60.0 and bull["edge_pts"] == 20.0
+    assert bear["hit_rate_pct"] == 60.0 and bear["chance_pct"] == 40.0
+    assert h7["spread_pct"] == round(3.0 - (-1.0), 2)                         # avg after Bullish minus after Bearish
+    top = next(b for b in h7["by_confidence"] if b["bucket"] == "70% and up")
+    assert top["calls"] == 2 and top["hit_rate_pct"] == 100.0
+    assert next(h for h in s["horizons"] if h["horizon_days"] == 30)["calls"] == 0
+
+
+def test_accuracy_endpoint_admin_only_and_job_listed(client):
+    assert client.get("/api/admin/verdicts/accuracy").status_code == 401
+    qa_login(client, plan="lite")
+    assert client.get("/api/admin/verdicts/accuracy").status_code == 403
+    qa_login(client, role="admin")
+    d = client.get("/api/admin/verdicts/accuracy?days=30").json()
+    assert d["days"] == 30 and [h["horizon_days"] for h in d["horizons"]] == [7, 30]
+    r = client.post("/api/admin/jobs/verdict_scoring/run").json()
+    assert r["ok"] is True and r["summary"].startswith("Scored 0 verdicts at 7 days")

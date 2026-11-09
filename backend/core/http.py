@@ -86,18 +86,22 @@ class TokenBucket:
         self.blocked_until = max(self.blocked_until, time.monotonic() + max(0.0, seconds))
         log.warning("%s: cooling down for %.0fs", self.name, seconds)
 
-    async def acquire(self, max_wait: float = 5.0) -> None:
+    async def acquire(self, max_wait: float = 5.0, cost: float = 1.0) -> None:
+        """Take `cost` tokens (a Twelve Data batch of N coins costs N credits). A cost above the bucket's capacity
+        can never be paid, so it fails at once instead of waiting."""
         deadline = time.monotonic() + max_wait
+        if cost > self.capacity:
+            raise RateLimited(f"{self.name}: a request costing {cost:g} exceeds the budget of {self.capacity:g}")
         async with self._get_lock():
             while True:
                 now = time.monotonic()
                 if now < self.blocked_until:
                     raise RateLimited(f"{self.name} is cooling down")
                 self._refill(now)
-                if self.tokens >= 1:
-                    self.tokens -= 1
+                if self.tokens >= cost:
+                    self.tokens -= cost
                     return
-                wait = (1 - self.tokens) * self.per / self.rate
+                wait = (cost - self.tokens) * self.per / self.rate
                 if now + wait > deadline:
                     raise RateLimited(f"{self.name} rate budget used up")
                 await asyncio.sleep(wait)

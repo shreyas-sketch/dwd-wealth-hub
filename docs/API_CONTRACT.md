@@ -249,5 +249,6 @@ offers: [{merchant, price, min_inr, max_inr, completion_pct, orders, payment: [s
 | GET / POST | /admin/crash-notes | `{notes: [{level: 20, note}]}` |
 | GET / POST / DELETE | /admin/kb[/{id}] | list docs `{items: [{id, title, chunks, words, uploaded_at}]}`; POST multipart `file` + `title` |
 | GET / POST | /admin/etf-flows | `{items: [{date, net_usd_m, note}]}` / `{date, net_usd_m, note}` |
+| GET | /admin/verdicts/accuracy?days=90 | Hit rate of the daily verdicts (7–365 days back): `{days, since, min_calls, horizons: [{horizon_days: 7\|30, band_pct, calls, right, hit_rate_pct, range_pct: [lo, hi], avg_return_pct, enough_data, spread_pct, by_verdict: [{verdict, calls, right, hit_rate_pct, range_pct, avg_return_pct, chance_pct, edge_pts}], by_confidence: [{bucket, calls, hit_rate_pct, …}], by_coin: [{symbol, calls, hit_rate_pct, avg_return_pct, …}]}], recent: [{date, symbol, verdict, confidence, return_pct, correct, end_basis}]}`. Scoring rules: `backend/features/accuracy.py`. |
 | GET | /admin/jobs | `{items: [{name, label, schedule, last: {at, ok, summary, result, ms}}]}`. `summary` is one plain sentence ("3 plans bought, 1 failed (of 4 due)."); `result` is the raw dict for the details view. |
 | POST | /admin/jobs/{name}/run | `{ok, summary, result, ms, at}` |
