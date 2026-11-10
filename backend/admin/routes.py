@@ -367,7 +367,7 @@ async def jobs(_: dict = Admin):
 async def run_job(name: str, _: dict = Admin):
     if name not in registry.JOBS:
         raise HTTPException(status_code=404, detail={"code": "unknown_job", "msg": "Unknown job."})
-    r = await registry.run(db(), name)
+    r = await registry.run(db(), name, manual=True)
     view = registry.run_view(name, r)
     return {"ok": view["ok"], "summary": view["summary"], "result": view["result"], "ms": view["ms"], "at": view["at"]}
 

@@ -26,6 +26,8 @@ FLAGS: dict[str, tuple] = {
     "AUTOPILOT": ("SIP Autopilot", "Autopilot", "Exchange linking and scheduled buys on KuCoin/Binance.", True, ("CRYPTO_DCA",)),
     "VENUE_BINANCE_ENABLED": ("Binance", "Autopilot", "Allow Binance for Autopilot and Baskets.", True, ()),
     "VENUE_KUCOIN_ENABLED": ("KuCoin", "Autopilot", "Allow KuCoin for Autopilot and Baskets.", True, ()),
+    "AIRDROP_AUTO": ("Automatic Airdrop Finder", "Airdrops", "Daily: find live airdrops with web search, publish only those whose link is the coin's official site (CoinGecko) and that 2+ sources confirm; end and pull old ones (Anthropic cost).", True, ()),
+    "BASKET_AUTO": ("Automatic basket refresh", "Baskets", "First Monday of each month: refresh baskets set to follow a rule (e.g. Big Five = five largest coins) and tell holders what changed.", True, ()),
     "BASKET_INVEST": ("Basket real-money buys", "Baskets", "Let ₹5,000 members buy a basket on their own exchange (practice always works).", True, ()),
     "RADAR": ("Early Coin Radar", "₹5,000 features", "Hourly scan of new listings and trending coins.", True, ()),
     "NEWS": ("News Decoder", "₹5,000 features", "News fetch and AI summaries every 2 hours.", True, ()),

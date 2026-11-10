@@ -4,7 +4,7 @@ import { inr, sdate } from "@/lib/format";
 import { Button, Field, Input, MoneyInput } from "../components/ui";
 import { CrudPage, textareaCls } from "./shared";
 
-const blank = { name: "", theme: "", description: "", coins: [{ symbol: "BTC", weight_pct: 50 }, { symbol: "ETH", weight_pct: 50 }], min_inr: 5000, risk_note: "", change_note: "" };
+const blank = { name: "", theme: "", description: "", coins: [{ symbol: "BTC", weight_pct: 50 }, { symbol: "ETH", weight_pct: 50 }], min_inr: 5000, risk_note: "", change_note: "", auto_rule: null };
 const sum = (coins) => (coins || []).reduce((s, c) => s + (Number(c.weight_pct) || 0), 0);
 
 function Form({ value: v, onChange }) {
@@ -38,6 +38,10 @@ function Form({ value: v, onChange }) {
       <Field label="Minimum amount"><MoneyInput value={v.min_inr} onChange={(val) => onChange({ ...v, min_inr: val })} /></Field>
       <Field label="Risk note"><textarea className={textareaCls} rows={2} value={v.risk_note} onChange={set("risk_note")} /></Field>
       <Field label="Change note" hint="Shown to holders when you change the coins or weights."><textarea className={textareaCls} rows={2} value={v.change_note} onChange={set("change_note")} /></Field>
+      <label className="flex items-center gap-3 min-h-[44px] cursor-pointer">
+        <input type="checkbox" checked={v.auto_rule === "top5"} onChange={(e) => onChange({ ...v, auto_rule: e.target.checked ? "top5" : null })} className="w-5 h-5 accent-[var(--bz-accent)]" data-testid="basket-auto-top5" />
+        <span className="font-semibold">Refresh automatically</span><span className="text-sm text-bz-muted">On the first Monday of each month, the coins become the 5 largest on both Binance and KuCoin (35/20/15/15/15, no meme coins). Holders are told what changed.</span>
+      </label>
     </div>
   );
 }
@@ -48,7 +52,7 @@ export default function AdminBaskets() {
       toForm={(r) => ({ ...blank, ...r, coins: (r.coins || []).map((c) => ({ symbol: c.symbol, weight_pct: c.weight_pct })) })}
       toBody={(v) => ({ name: v.name.trim(), theme: v.theme.trim(), description: v.description.trim(),
         coins: v.coins.filter((c) => c.symbol).map((c) => ({ symbol: c.symbol.trim().toUpperCase(), weight_pct: Number(c.weight_pct) || 0 })),
-        min_inr: Number(v.min_inr) || 0, risk_note: v.risk_note.trim(), change_note: v.change_note.trim() })}
+        min_inr: Number(v.min_inr) || 0, risk_note: v.risk_note.trim(), change_note: v.change_note.trim(), auto_rule: v.auto_rule || null })}
       validate={(v) => {
         if (!v.name.trim()) return "Name is required.";
         const coins = v.coins.filter((c) => c.symbol);
@@ -58,7 +62,7 @@ export default function AdminBaskets() {
         return "";
       }}
       cols={[
-        { key: "name", label: "Name", render: (r) => <b>{r.name}</b> },
+        { key: "name", label: "Name", render: (r) => <><b>{r.name}</b>{r.auto_rule ? <span className="ml-2 text-[12px] text-bz-muted">Auto</span> : null}</> },
         { key: "theme", label: "Theme" },
         { key: "coins", label: "Coins", wrap: true, render: (r) => (r.coins || []).map((c) => `${c.symbol} ${c.weight_pct}%`).join(" · ") },
         { key: "min_inr", label: "Min", render: (r) => inr(r.min_inr), right: true },

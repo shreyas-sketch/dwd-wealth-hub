@@ -50,7 +50,7 @@ def test_baskets_practice_invest_and_change_alert(seeded_client, mdb):
     qa_login(c)
     items = c.get("/api/baskets").json()["items"]
     core = next(b for b in items if b["name"].startswith("Bitcoin"))
-    assert core["min_inr"] == 2000
+    assert core["min_inr"] == 3334          # 70/30: the 30% coin needs ₹1,000 (QA 11 Nov: was 1,000 × coins)
     assert c.post(f"/api/baskets/{core['id']}/practice", json={"amount_inr": 1500}).status_code == 400
     paper = c.post(f"/api/baskets/{core['id']}/practice", json={"amount_inr": 10000}).json()
     assert {p["symbol"] for p in paper["positions"]} == {"BTC", "ETH"}

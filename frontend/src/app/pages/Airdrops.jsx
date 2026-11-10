@@ -32,6 +32,7 @@ function AirdropCard({ a }) {
         <Chip tone={a.status === "live" ? "bull" : "muted"}>{a.status === "live" ? "Live" : "Ended"}</Chip>
       </div>
       <div className="flex flex-wrap gap-2 mt-3">
+        {a.link_verified && <Chip tone="bull">Verified official link</Chip>}
         {a.xray && <XrayChip label={a.xray.label} score={a.xray.score} />}
         {a.deadline && <Chip tone={left != null && left <= 3 ? "bear" : "gold"}>Ends {hdate(a.deadline)}{left != null ? ` · ${left} day${left === 1 ? "" : "s"} left` : ""}</Chip>}
       </div>

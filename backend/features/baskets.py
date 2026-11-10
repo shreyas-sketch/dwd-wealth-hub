@@ -4,12 +4,18 @@ buy once on your own exchange, or put the basket on Autopilot.
 baskets {_id, name, theme, description, coins: [{symbol, weight_pct}], risk_note, change_note, changed_at,
          active, created_at}
 
-Rules: minimum ₹1,000 per coin per buy (so min_inr = 1,000 × coins); coins must be listed on both
+Rules: minimum ₹1,000 per coin per buy (so min_inr = the larger of 1,000 × coins and the amount that gives the
+smallest-weight coin ₹1,000); coins must be listed on both
 Binance and KuCoin; not enough USDT → nothing is bought; the software never sells. A basket change
 alerts everyone holding it ("X removed — open the app to decide").
+
+auto_rule (optional): "top5" keeps the basket on the five largest coins listed on both exchanges, weights 35/20/15/15/15
+by size. The weekly job `baskets_auto` acts on the first Monday of the month (or on "Run now"); a coin is only
+swapped out once it drops below 7th, so the basket doesn't churn on small moves.
 """
 from __future__ import annotations
 
+import math
 import uuid
 from typing import Literal, Optional
 
@@ -44,6 +50,7 @@ class BasketIn(BaseModel):
     risk_note: Optional[str] = Field(None, max_length=300)
     change_note: Optional[str] = Field(None, max_length=300)
     active: bool = True
+    auto_rule: Optional[Literal["top5"]] = None
 
 
 class AmountIn(BaseModel):
@@ -61,10 +68,20 @@ class AutoIn(InvestIn):
     day: int = Field(1, ge=1, le=28)
 
 
+def min_inr(coins: list[dict]) -> float:
+    """The smallest buy _split() accepts: every coin, including the smallest weight, gets ₹1,000. QA 11 Nov: the
+    card showed 1,000 × coins (₹2,000 for BTC 60 / ETH 40) and a buy of that amount was refused (needs ₹2,500)."""
+    if not coins:
+        return 0.0
+    lowest = min(c["weight_pct"] for c in coins)
+    return float(max(dca.MIN_INR_PER_COIN * len(coins), math.ceil(dca.MIN_INR_PER_COIN * 100 / lowest)))
+
+
 def public(b: dict) -> dict:
     return {"id": b["_id"], "name": b["name"], "theme": b.get("theme"), "description": b.get("description"),
-            "coins": b["coins"], "min_inr": dca.MIN_INR_PER_COIN * len(b["coins"]), "risk_note": b.get("risk_note"),
-            "change_note": b.get("change_note"), "changed_at": iso(b.get("changed_at")), "active": b.get("active", True)}
+            "coins": b["coins"], "min_inr": min_inr(b["coins"]), "risk_note": b.get("risk_note"),
+            "change_note": b.get("change_note"), "changed_at": iso(b.get("changed_at")), "active": b.get("active", True),
+            "auto_rule": b.get("auto_rule")}
 
 
 async def _basket(bid: str) -> dict:
@@ -169,6 +186,8 @@ async def save(body: BasketIn, basket_id: Optional[str] = None) -> dict:
         old = await db().baskets.find_one({"_id": basket_id})
         if not old:
             raise HTTPException(status_code=404, detail={"code": "not_found", "msg": "Basket not found."})
+        if "auto_rule" not in body.model_fields_set:      # a client that leaves it out (older admin page, API call) keeps what was set
+            doc["auto_rule"] = old.get("auto_rule")
         changed = {c["symbol"]: c["weight_pct"] for c in old["coins"]} != {c["symbol"]: c["weight_pct"] for c in coins}
         if changed:
             doc["changed_at"] = now
@@ -189,3 +208,55 @@ async def save(body: BasketIn, basket_id: Optional[str] = None) -> dict:
     doc.update(_id=uuid.uuid4().hex[:10], created_at=now, changed_at=now)
     await db().baskets.insert_one(doc)
     return public(doc)
+
+
+# ---------------------------------------------------------------- automatic refresh ----
+TOP5_WEIGHTS = (35.0, 20.0, 15.0, 15.0, 15.0)
+TOP5_KEEP_RANK = 7          # a current coin stays while it is in the top 7, so small moves don't swap coins
+
+
+async def top5_mix(current: list[str]) -> Optional[list[dict]]:
+    """The "top5" rule: the five largest coins listed on BOTH Binance and KuCoin, weighted by size. Current coins
+    that are still in the top 7 keep their place. None when the market data or listings can't be read."""
+    try:
+        both = set(await market.listings("binance")) & set(await market.listings("kucoin"))
+        rows = await market.top_coins(25, exclude_stables=True, tradable=False)
+    except Exception:  # noqa: BLE001
+        return None
+    from features.xray import is_meme             # a meme coin never enters a rule basket, even in the top 5
+    ranked = [r["symbol"] for r in rows if r["symbol"] in both and not is_meme(r)]
+    if len(ranked) < 5:
+        return None
+    keep = [s for s in ranked[:TOP5_KEEP_RANK] if s in current]
+    pick = (keep + [s for s in ranked if s not in keep])[:5]
+    pick.sort(key=ranked.index)                   # biggest first gets the biggest weight
+    return [{"symbol": s, "weight_pct": w} for s, w in zip(pick, TOP5_WEIGHTS)]
+
+
+async def job_auto_refresh(ctx) -> dict:
+    """Weekly; acts on the first Monday of the month (days 1–7), or any day from "Run now"."""
+    if not is_on("BASKET_AUTO"):
+        return {"status": "off"}
+    from growth.clock import IST, as_utc
+    if not ctx.manual and as_utc(ctx.now).astimezone(IST).day > 7:
+        return {"status": "not_this_week"}
+    out = []
+    async for b in ctx.db.baskets.find({"auto_rule": "top5", "active": {"$ne": False}}):
+        cur = [c["symbol"] for c in b["coins"]]
+        mix = await top5_mix(cur)
+        if mix is None:
+            out.append({"basket": b["name"], "status": "no_data"})
+            continue
+        if {c["symbol"]: c["weight_pct"] for c in mix} == {c["symbol"]: c["weight_pct"] for c in b["coins"]}:
+            out.append({"basket": b["name"], "status": "unchanged"})
+            continue
+        body = BasketIn(name=b["name"], theme=b.get("theme"), description=b.get("description"),
+                        coins=[CoinW(**c) for c in mix], risk_note=b.get("risk_note"), change_note=None,
+                        active=True, auto_rule="top5")
+        try:
+            await save(body, b["_id"])            # alerts every holder with what was removed / added
+        except HTTPException as e:
+            out.append({"basket": b["name"], "status": "rejected", "why": str(e.detail)[:160]})
+            continue
+        out.append({"basket": b["name"], "status": "changed", "coins": [c["symbol"] for c in mix]})
+    return {"status": "ok", "baskets": out}

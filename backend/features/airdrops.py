@@ -2,7 +2,10 @@
 Coin X-Ray, with the steps to join and a per-user checklist.
 
 airdrops {_id, name, coin, chain, status live|ended, reward, deadline, link, description,
-          steps: [{id, text}], xray: {label, score}, created_at, updated_at}
+          steps: [{id, text}], xray: {label, score}, created_at, updated_at,
+          source "admin"|"auto", link_verified (the link is the coin's official website per CoinGecko),
+          hidden (pulled by the automatic checks; never shown to members), sources [urls], checked_at}
+Listings come from the team (Admin › Airdrops) and from the daily automatic finder (features/airdrop_auto.py).
 airdrop_progress {_id: "<uid>:<airdrop_id>", user_id, airdrop_id, done_steps: [step ids]}
 """
 from __future__ import annotations
@@ -97,7 +100,7 @@ def public(a: dict, done: Optional[list] = None) -> dict:
     return {"id": a["_id"], "name": a["name"], "coin": a.get("coin"), "chain": a.get("chain"), "status": a.get("status", "live"),
             "reward": a.get("reward"), "deadline": a.get("deadline"), "link": a.get("link"),
             "description": a.get("description"), "steps": a.get("steps") or [],
-            "xray": a.get("xray"),
+            "xray": a.get("xray"), "link_verified": bool(a.get("link_verified")), "source": a.get("source") or "admin",
             **({"done_steps": [i for i in done if i in {st["id"] for st in a.get("steps") or []}]} if done is not None else {}),
             "updated_at": iso(a.get("updated_at"))}
 
@@ -107,7 +110,7 @@ async def listing(user: dict = Depends(user_dep())):
     await plans.require(db(), user, "airdrops")
     uid = str(user["_id"])
     prog = {p["airdrop_id"]: p.get("done_steps", []) async for p in db().airdrop_progress.find({"user_id": uid})}
-    rows = [a async for a in db().airdrops.find({}).sort([("status", -1), ("deadline", 1)])]
+    rows = [a async for a in db().airdrops.find({"hidden": {"$ne": True}}).sort([("status", -1), ("deadline", 1)])]
     rows.sort(key=lambda a: (a.get("status") != "live", a.get("deadline") or "9999"))
     return {"items": [public(a, prog.get(a["_id"], [])) for a in rows]}
 
@@ -115,7 +118,7 @@ async def listing(user: dict = Depends(user_dep())):
 @router.post("/airdrops/{airdrop_id}/steps/{step_id}")
 async def tick(airdrop_id: str, step_id: str, body: StepIn, user: dict = Depends(user_dep())):
     await plans.require(db(), user, "airdrops")
-    a = await db().airdrops.find_one({"_id": airdrop_id})
+    a = await db().airdrops.find_one({"_id": airdrop_id, "hidden": {"$ne": True}})
     if not a or step_id not in {s["id"] for s in a.get("steps") or []}:
         raise HTTPException(status_code=404, detail={"code": "not_found", "msg": "Step not found."})
     uid = str(user["_id"])
@@ -129,7 +132,10 @@ async def tick(airdrop_id: str, step_id: str, body: StepIn, user: dict = Depends
 
 
 # ---------------------------------------------------------------- admin helpers ----
-async def save(body: AirdropIn, airdrop_id: Optional[str] = None) -> dict:
+async def save(body: AirdropIn, airdrop_id: Optional[str] = None, *, auto: Optional[dict] = None) -> dict:
+    """auto: set by the automatic finder only, {link_verified, sources, checked_at}. A verified official link is
+    not run through the link X-Ray (an official claim page has words like "airdrop" or "claim" in it, which the
+    link rules rightly treat as bait on unknown sites); the coin is still X-Rayed."""
     from features.xray import run_xray
     now = utcnow()
     existing = await db().airdrops.find_one({"_id": airdrop_id}) if airdrop_id else None
@@ -137,11 +143,18 @@ async def save(body: AirdropIn, airdrop_id: Optional[str] = None) -> dict:
         raise HTTPException(status_code=404, detail={"code": "not_found", "msg": "Airdrop not found."})
     steps = reconcile_steps(body.steps, (existing or {}).get("steps") or [])
     doc = {**body.model_dump(exclude={"steps"}), "steps": steps, "updated_at": now}
+    if auto is not None:
+        doc.update(source="auto", link_verified=bool(auto.get("link_verified")), sources=list(auto.get("sources") or [])[:10],
+                   checked_at=auto.get("checked_at") or now, hidden=False)
+    else:
+        # Saved from Admin › Airdrops (new, or an edit of an automatic one): the team owns it from now on, so the
+        # automatic finder leaves it alone and its link is X-Rayed like any other.
+        doc.update(source="admin", link_verified=False)
     if doc.get("coin"):
         doc["coin"] = doc["coin"].upper()
     # Check the coin AND the link; show the riskier answer (a real coin behind a fake claim page is still a scam).
     checks = []
-    for target in (doc.get("coin"), doc.get("link")):
+    for target in (doc.get("coin"), None if doc.get("link_verified") else doc.get("link")):
         if target:
             try:
                 x = await run_xray(target)
