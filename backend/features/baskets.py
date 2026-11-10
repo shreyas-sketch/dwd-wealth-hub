@@ -215,22 +215,39 @@ TOP5_WEIGHTS = (35.0, 20.0, 15.0, 15.0, 15.0)
 TOP5_KEEP_RANK = 7          # a current coin stays while it is in the top 7, so small moves don't swap coins
 
 
-async def top5_mix(current: list[str]) -> Optional[list[dict]]:
-    """The "top5" rule: the five largest coins listed on BOTH Binance and KuCoin, weighted by size. Current coins
-    that are still in the top 7 keep their place. None when the market data or listings can't be read."""
+class NoData(Exception):
+    """The market data a rule basket needs can't be read; the message says which part."""
+
+
+async def _top5(current: list[str]) -> list[dict]:
+    lists = {}
+    for venue in ("binance", "kucoin"):
+        try:
+            lists[venue] = set(await market.listings(venue))
+        except Exception as e:  # noqa: BLE001
+            raise NoData(f"can't read the {venue.title()} coin list ({type(e).__name__})")
+    both = lists["binance"] & lists["kucoin"]
     try:
-        both = set(await market.listings("binance")) & set(await market.listings("kucoin"))
         rows = await market.top_coins(25, exclude_stables=True, tradable=False)
-    except Exception:  # noqa: BLE001
-        return None
+    except Exception as e:  # noqa: BLE001
+        raise NoData(f"can't read market sizes ({type(e).__name__})")
     from features.xray import is_meme             # a meme coin never enters a rule basket, even in the top 5
     ranked = [r["symbol"] for r in rows if r["symbol"] in both and not is_meme(r)]
     if len(ranked) < 5:
-        return None
+        raise NoData(f"only {len(ranked)} coins qualify")
     keep = [s for s in ranked[:TOP5_KEEP_RANK] if s in current]
     pick = (keep + [s for s in ranked if s not in keep])[:5]
     pick.sort(key=ranked.index)                   # biggest first gets the biggest weight
     return [{"symbol": s, "weight_pct": w} for s, w in zip(pick, TOP5_WEIGHTS)]
+
+
+async def top5_mix(current: list[str]) -> Optional[list[dict]]:
+    """The "top5" rule: the five largest coins listed on BOTH Binance and KuCoin, weighted by size. Current coins
+    that are still in the top 7 keep their place. None when the market data or listings can't be read."""
+    try:
+        return await _top5(current)
+    except NoData:
+        return None
 
 
 async def job_auto_refresh(ctx) -> dict:
@@ -243,9 +260,10 @@ async def job_auto_refresh(ctx) -> dict:
     out = []
     async for b in ctx.db.baskets.find({"auto_rule": "top5", "active": {"$ne": False}}):
         cur = [c["symbol"] for c in b["coins"]]
-        mix = await top5_mix(cur)
-        if mix is None:
-            out.append({"basket": b["name"], "status": "no_data"})
+        try:
+            mix = await _top5(cur)
+        except NoData as e:
+            out.append({"basket": b["name"], "status": "no_data", "why": str(e)})
             continue
         if {c["symbol"]: c["weight_pct"] for c in mix} == {c["symbol"]: c["weight_pct"] for c in b["coins"]}:
             out.append({"basket": b["name"], "status": "unchanged"})

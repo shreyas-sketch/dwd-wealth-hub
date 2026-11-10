@@ -260,3 +260,19 @@ def test_min_inr_covers_the_smallest_weight():
     assert baskets.min_inr([{"symbol": s, "weight_pct": w} for s, w in
                             zip("ABCDE", (35, 20, 15, 15, 15))]) == 6667
     assert baskets.min_inr([]) == 0
+
+
+async def test_basket_job_says_why_there_is_no_data(mdb, mkt, monkeypatch):
+    await mdb.baskets.insert_one({"_id": "b5", "name": "Big Five", "auto_rule": "top5", "active": True,
+                                  "coins": [{"symbol": "BTC", "weight_pct": 100}]})
+
+    async def listings(venue):
+        if venue == "binance":
+            raise RuntimeError("451")
+        return mkt["listed"]
+    monkeypatch.setattr(market, "listings", listings)
+    r = await baskets.job_auto_refresh(Ctx(mdb, utcnow(), manual=True))
+    assert r["baskets"] == [{"basket": "Big Five", "status": "no_data",
+                             "why": "can't read the Binance coin list (RuntimeError)"}]
+    assert await baskets.top5_mix([]) is None
+    assert (await mdb.baskets.find_one({"_id": "b5"}))["coins"] == [{"symbol": "BTC", "weight_pct": 100}]

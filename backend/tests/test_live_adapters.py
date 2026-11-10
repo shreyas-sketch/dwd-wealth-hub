@@ -82,3 +82,15 @@ def test_xray_classify():
 def test_rate_safety_rules():
     from features.p2p import safety
     assert safety(99, 1000) == "high" and safety(96, 150) == "medium" and safety(90, 5000) == "low"
+
+
+async def test_binance_list_falls_back_when_main_host_refuses():
+    # Railway runs in the US, where api.binance.com answers 451; the market-data host still serves the list.
+    def handler(req: httpx.Request):
+        if req.url.host == "api.binance.com":
+            return httpx.Response(451, json={"msg": "Service unavailable from a restricted location"})
+        if req.url.host == "data-api.binance.vision":
+            return httpx.Response(200, json={"symbols": [{"baseAsset": "BTC", "quoteAsset": "USDT", "status": "TRADING"}]})
+        return httpx.Response(404, json={})
+    lm = LiveMarket(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    assert await lm.listings("binance") == ["BTC"]
