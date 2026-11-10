@@ -35,22 +35,37 @@ log = logging.getLogger("radar")
 UNCHECKED = {"label": "unchecked", "score": None, "red_flags": []}
 
 
-async def _xray(sym: str) -> dict:
-    from features.xray import cached_xray
+# A saved X-Ray is redone when the X-Ray rules change (XRAY_RULES_VERSION) or once it is a day old, so a rule fix
+# reaches the radar and Today page within an hour. (QA 10 Nov: Pepe stayed "Looks safe" after the meme-coin rule.)
+XRAY_MAX_AGE = timedelta(days=1)
+RECHECK_PER_SCAN = 25
+
+
+async def _xray(sym: str, now=None) -> dict:
+    from features.xray import XRAY_RULES_VERSION, cached_xray
     try:
         x = await cached_xray(sym)
-        return {"label": x["label"], "score": x["score"], "red_flags": [f["title"] for f in x["red_flags"]][:4]}
+        return {"label": x["label"], "score": x["score"], "red_flags": [f["title"] for f in x["red_flags"]][:4],
+                "rules": XRAY_RULES_VERSION, "checked_at": now or utcnow()}
     except Exception as e:  # noqa: BLE001 — retried on the next scan
         log.warning("radar X-Ray for %s failed: %s", sym, getattr(e, "detail", None) or e)
         return dict(UNCHECKED)
 
 
-async def _xray_if_needed(d, _id: str, sym: str) -> Optional[dict]:
-    """X-Ray a coin the first time it appears, or again if its last check couldn't run."""
-    prev = await d.radar_items.find_one({"_id": _id}, {"xray": 1})
-    if prev and (prev.get("xray") or {}).get("label") not in (None, "unchecked"):
+def stale_filter(now) -> dict:
+    """Rows whose X-Ray must be redone: never ran, couldn't run, made under older rules, or over a day old."""
+    from features.xray import XRAY_RULES_VERSION
+    return {"$or": [{"xray": None}, {"xray.label": {"$in": [None, "unchecked"]}},
+                    {"xray.rules": {"$ne": XRAY_RULES_VERSION}},
+                    {"xray.checked_at": {"$not": {"$gte": now - XRAY_MAX_AGE}}}]}
+
+
+async def _xray_if_needed(d, _id: str, sym: str, now) -> Optional[dict]:
+    """X-Ray a coin the first time it appears, or again if its last check is stale."""
+    if await d.radar_items.find_one({"_id": _id}, {"_id": 1}) and not await d.radar_items.find_one(
+            {"_id": _id, **stale_filter(now)}, {"_id": 1}):
         return None
-    return await _xray(sym)
+    return await _xray(sym, now)
 
 
 async def job_scan(ctx) -> dict:
@@ -75,7 +90,7 @@ async def job_scan(ctx) -> dict:
             _id = f"new_listing:{venue}:{sym}"
             await d.radar_items.update_one({"_id": _id}, {"$setOnInsert": {
                 "symbol": sym, "name": info.get("name") or sym, "kind": "new_listing", "venue": venue, "listed_at": now,
-                "price_usd": info.get("price_usd"), "change_24h": info.get("change_24h"), "xray": await _xray(sym),
+                "price_usd": info.get("price_usd"), "change_24h": info.get("change_24h"), "xray": await _xray(sym, now),
                 "seen_at": now}}, upsert=True)
             new += 1
     trend = 0
@@ -83,7 +98,7 @@ async def job_scan(ctx) -> dict:
         for t in await market.trending():
             sym = t["symbol"]
             _id = f"trending:cg:{sym}"
-            x = await _xray_if_needed(d, _id, sym)
+            x = await _xray_if_needed(d, _id, sym, now)
             await d.radar_items.update_one({"_id": _id}, {
                 "$set": {"price_usd": t.get("price_usd"), "change_24h": t.get("change_24h"), "seen_at": now,
                          "name": t.get("name") or sym, **({"xray": x} if x else {})},
@@ -92,12 +107,12 @@ async def job_scan(ctx) -> dict:
             trend += 1
     except Exception:  # noqa: BLE001
         pass
-    # Retry any coin whose check couldn't run last time (old-style failures are converted first).
+    # Redo stale checks: couldn't run last time, older rules, or over a day old (old-style failures converted first).
     from maintenance import fix_legacy_radar_checks
     await fix_legacy_radar_checks(d)
     rechecked = 0
-    async for r in d.radar_items.find({"xray.label": "unchecked"}, {"symbol": 1}).limit(25):
-        x = await _xray(r["symbol"])
+    async for r in d.radar_items.find(stale_filter(now), {"symbol": 1}).sort("seen_at", -1).limit(RECHECK_PER_SCAN):
+        x = await _xray(r["symbol"], now)
         if x["label"] != "unchecked":
             await d.radar_items.update_one({"_id": r["_id"]}, {"$set": {"xray": x}})
             rechecked += 1
@@ -147,4 +162,4 @@ async def radar(user: dict = Depends(user_dep())):
             "items": [{"id": r["_id"], "symbol": r["symbol"], "name": r.get("name"), "kind": r["kind"],
                        "venue": r.get("venue"), "listed_at": iso(r.get("listed_at")),
                        "price_usd": smart_round(r.get("price_usd")), "change_24h": r2(r.get("change_24h")),
-                       "xray": r.get("xray"), "seen_at": iso(r["seen_at"])} for r in rows]}
+                       "xray": {k: (r.get("xray") or {}).get(k) for k in ("label", "score", "red_flags")}, "seen_at": iso(r["seen_at"])} for r in rows]}

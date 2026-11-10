@@ -13,6 +13,7 @@ QA_MODE: codes go to the console sender, the code comes back as `dev_code`, and
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import timedelta
 from typing import Literal, Optional
@@ -55,10 +56,26 @@ def _senders() -> Senders:
 
 
 def client_ip(request: Request) -> str:
-    for h in ("cf-connecting-ip", "x-forwarded-for"):
-        v = request.headers.get(h)
+    """The visitor's IP for rate limits (anonymous X-Ray, OTP per IP).
+
+    Only headers set by our own proxy count. A browser or script can send any CF-Connecting-IP or X-Forwarded-For it
+    likes, so reading those as-is let one visitor look like a new network on every request (QA 10 Nov). Railway's
+    edge appends the address it saw to X-Forwarded-For, so the real client is the entry TRUSTED_PROXY_HOPS from the
+    right (default 1). Set CLIENT_IP_HEADER (e.g. cf-connecting-ip) only when a proxy in front, such as Cloudflare,
+    overwrites that header on every request.
+    """
+    name = (os.environ.get("CLIENT_IP_HEADER") or "").strip().lower()
+    if name:
+        v = (request.headers.get(name) or "").strip()
         if v:
             return v.split(",")[0].strip()[:64]
+    try:
+        hops = max(0, int(os.environ.get("TRUSTED_PROXY_HOPS", "1") or 1))
+    except ValueError:
+        hops = 1
+    xff = [p.strip() for p in ",".join(request.headers.getlist("x-forwarded-for")).split(",") if p.strip()]
+    if hops and xff:
+        return xff[-min(hops, len(xff))][:64]
     return (request.client.host if request.client else "") or ""
 
 
