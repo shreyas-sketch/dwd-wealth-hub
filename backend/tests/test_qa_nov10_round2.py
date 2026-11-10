@@ -79,7 +79,23 @@ async def test_radar_redoes_checks_from_old_rules_or_over_a_day_old(mdb):
     assert (await mdb.radar_items.find_one({"_id": "trending:cg:BTC"}))["xray"]["red_flags"] == ["fresh"]  # left alone
 
 
-def test_debug_client_ip_shows_caller_their_own_headers(client):
-    d = client.get("/api/auth/debug/client-ip", headers={"x-forwarded-for": "9.9.9.9, 81.2.69.142, 100.64.0.3"}).json()
-    assert d["chosen_ip"] == "81.2.69.142" and d["headers"]["x-forwarded-for"] == "9.9.9.9, 81.2.69.142, 100.64.0.3"
-    assert "x-forwarded-for" in d["header_names"]
+
+def test_on_railway_the_visitor_is_x_real_ip(client, monkeypatch):
+    """Railway (seen live 10 Nov): X-Forwarded-For = "<visitor>, <edge address that changes per request>", X-Real-IP
+    = visitor; a visitor's own X-Forwarded-For / X-Real-IP are overwritten, CF-Connecting-IP passes through."""
+    from accounts.routes import client_ip
+    monkeypatch.delenv("CLIENT_IP_HEADER", raising=False)
+    monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
+    for edge in ("152.233.30.101", "152.233.30.104"):
+        assert client_ip(_req({"x-real-ip": "81.2.69.142", "x-forwarded-for": f"81.2.69.142, {edge}",
+                               "cf-connecting-ip": "1.1.1.1", "true-client-ip": "4.4.4.4"})) == "81.2.69.142"
+    monkeypatch.setenv("ANON_XRAY_NOCOOKIE_PER_IP_DAY", "3")
+    codes = []
+    for i in range(5):
+        client.cookies.clear()
+        codes.append(client.post("/api/xray", json={"query": "SOL"}, headers={
+            "x-real-ip": "81.2.69.142", "x-forwarded-for": f"81.2.69.142, 152.233.30.{100 + i}",
+            "cf-connecting-ip": f"1.1.{i}.1"}).status_code)
+    assert codes == [200, 200, 200, 402, 402]
+    monkeypatch.setenv("CLIENT_IP_HEADER", "none")            # opt out: read X-Forwarded-For instead
+    assert client_ip(_req({"x-real-ip": "81.2.69.142", "x-forwarded-for": "82.3.4.5"})) == "82.3.4.5"

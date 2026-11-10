@@ -70,22 +70,36 @@ def _internal(ip: str) -> bool:
 _CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
 
+def _ip_header() -> str:
+    """The header that holds the visitor's address. CLIENT_IP_HEADER if set; on Railway, X-Real-IP, which its edge
+    sets to the connecting address and overwrites whatever a visitor sent (checked live 10 Nov). Elsewhere none,
+    and X-Forwarded-For is read instead."""
+    name = (os.environ.get("CLIENT_IP_HEADER") or "").strip().lower()
+    if name:
+        return "" if name == "none" else name
+    return "x-real-ip" if any(os.environ.get(k) for k in ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME",
+                                                           "RAILWAY_PROJECT_ID", "RAILWAY_SERVICE_ID")) else ""
+
+
 def client_ip(request: Request) -> str:
     """The visitor's IP for rate limits (anonymous X-Ray, OTP per IP).
 
-    A browser or script can send any CF-Connecting-IP or X-Forwarded-For it likes, so only what our own proxies
-    add counts. Each proxy appends the address it saw, so walk X-Forwarded-For from the right: skip the hosting
-    network's internal hops (Railway adds one that changes between requests, which split one visitor across many
-    counts — QA 10 Nov), then skip TRUSTED_PROXY_HOPS public proxies (default 0; Cloudflare in front = 1). The next
-    entry is the visitor; anything a visitor sent sits to its left and is ignored. Set CLIENT_IP_HEADER (e.g.
-    cf-connecting-ip) only when a proxy in front overwrites that header on every request. LOG_CLIENT_IP=true logs
-    the raw header and the chosen IP, to check the setup on a new host.
+    A visitor can send any CF-Connecting-IP, True-Client-IP or X-Forwarded-For it likes, so only what our own
+    proxies set counts. On Railway that is X-Real-IP: the edge overwrites it with the real address, while it
+    appends its own edge address to X-Forwarded-For, which changes on every request (taking that last entry split
+    one visitor over many counts — QA 10 Nov). Without such a header, walk X-Forwarded-For from the right: skip
+    internal hops, then TRUSTED_PROXY_HOPS public proxies (default 0); anything a visitor sent sits further left.
+    LOG_CLIENT_IP=true logs the raw headers and the chosen IP.
     """
-    name = (os.environ.get("CLIENT_IP_HEADER") or "").strip().lower()
+    name = _ip_header()
     if name:
         v = (request.headers.get(name) or "").strip()
         if v:
-            return v.split(",")[0].strip()[:64]
+            ip = v.split(",")[0].strip()[:64]
+            if (os.environ.get("LOG_CLIENT_IP") or "").strip().lower() in ("1", "true", "yes"):
+                log.info("client_ip: %s=%r x-forwarded-for=%r -> %s", name, v,
+                         ",".join(request.headers.getlist("x-forwarded-for")), ip)
+            return ip
     try:
         skip = max(0, int(os.environ.get("TRUSTED_PROXY_HOPS", "0") or 0))
     except ValueError:
@@ -105,22 +119,6 @@ def client_ip(request: Request) -> str:
         log.info("client_ip: x-forwarded-for=%r x-real-ip=%r peer=%r -> %s", raw, request.headers.get("x-real-ip"),
                  request.client.host if request.client else None, ip)
     return ip
-
-
-# TEMPORARY (QA 10 Nov): shows the caller their own request as the server sees it behind Railway, to find which
-# forwarded header holds the visitor's real address. Only the caller's own headers are returned. Remove once
-# client_ip() is fixed.
-_DIAG_HEADERS = ("x-forwarded-for", "x-real-ip", "cf-connecting-ip", "true-client-ip", "forwarded",
-                 "x-envoy-external-address", "x-forwarded-proto", "x-forwarded-host", "x-request-start", "via")
-
-
-@router.get("/debug/client-ip")
-async def debug_client_ip(request: Request):
-    return {"chosen_ip": client_ip(request),
-            "peer": request.client.host if request.client else None,
-            "x_forwarded_for_list": request.headers.getlist("x-forwarded-for"),
-            "headers": {h: request.headers.get(h) for h in _DIAG_HEADERS if request.headers.get(h) is not None},
-            "header_names": sorted({k.lower() for k in request.headers.keys()})}
 
 
 class OtpRequestIn(BaseModel):
