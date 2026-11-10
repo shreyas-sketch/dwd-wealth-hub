@@ -16,14 +16,56 @@ const KIND = {
   etf: { label: "ETF", icon: TrendingUp },
 };
 const IMPACT = { high: "bear", medium: "gold", low: "muted" };
+const WINDOW_DAYS = 60;
+
+function windowEnd() {
+  const d = new Date(`${istToday()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + WINDOW_DAYS);
+  return d.toISOString().slice(0, 10);
+}
 
 function dayHeading(iso) {
   const d = new Date(`${String(iso).slice(0, 10)}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return iso;
   const today = new Date(`${istToday()}T00:00:00Z`);
   const diff = Math.round((d - today) / 86400000);
-  const label = d.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+  // The year is shown when it isn't this year (QA 10 Nov: "Saturday, 15 April" was the 2028 halving).
+  const otherYear = d.getUTCFullYear() !== today.getUTCFullYear();
+  const label = d.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC", ...(otherYear ? { year: "numeric" } : {}) });
   return diff === 0 ? `Today · ${label}` : diff === 1 ? `Tomorrow · ${label}` : label;
+}
+
+function DaySection({ date, evs }) {
+  return (
+    <section data-testid={`cal-${date}`}>
+      <h2 className="font-bzmono text-[11px] uppercase tracking-[0.2em] text-bz-gold-deep mb-2">{dayHeading(date)}</h2>
+      <div className="space-y-2">
+        {evs.map((e) => {
+          const k = KIND[e.kind] || { label: e.kind, icon: CalendarDays };
+          const Icon = k.icon;
+          return (
+            <Card key={e.id || e.title} className={`p-4 ${e.yours ? "border-bz-gold" : ""}`}>
+              <div className="flex gap-3">
+                <span className="w-10 h-10 rounded-full bg-bz-inset grid place-items-center shrink-0"><Icon className="w-5 h-5 text-bz-gold" strokeWidth={1.75} aria-hidden /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-[15.5px] font-semibold">{e.title}</p>
+                    {e.yours && <Chip tone="solid">Yours</Chip>}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    <Chip>{k.label}</Chip>
+                    {e.impact && <Chip tone={IMPACT[e.impact] || "muted"}>{e.impact} impact</Chip>}
+                    {(e.coins || []).map((c) => <Chip key={c} tone="gold">{c}</Chip>)}
+                  </div>
+                  {e.note && <p className="text-[14px] text-bz-muted mt-2">{e.note}</p>}
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 export default function Calendar() {
@@ -37,38 +79,22 @@ export default function Calendar() {
         <Loadable q={q} what="the calendar" lines={6}>
           {(d) => {
             const items = (d.items || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
-            if (!items.length) return <Empty icon={CalendarDays} title="No events in the next 60 days" sub="New events are added as they're announced." />;
-            const groups = items.reduce((m, e) => { const k = String(e.date).slice(0, 10); (m[k] = m[k] || []).push(e); return m; }, {});
-            return Object.entries(groups).map(([date, evs]) => (
-              <section key={date} data-testid={`cal-${date}`}>
-                <h2 className="font-bzmono text-[11px] uppercase tracking-[0.2em] text-bz-gold-deep mb-2">{dayHeading(date)}</h2>
-                <div className="space-y-2">
-                  {evs.map((e) => {
-                    const k = KIND[e.kind] || { label: e.kind, icon: CalendarDays };
-                    const Icon = k.icon;
-                    return (
-                      <Card key={e.id || e.title} className={`p-4 ${e.yours ? "border-bz-gold" : ""}`}>
-                        <div className="flex gap-3">
-                          <span className="w-10 h-10 rounded-full bg-bz-inset grid place-items-center shrink-0"><Icon className="w-5 h-5 text-bz-gold" strokeWidth={1.75} aria-hidden /></span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="text-[15.5px] font-semibold">{e.title}</p>
-                              {e.yours && <Chip tone="solid">Yours</Chip>}
-                            </div>
-                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                              <Chip>{k.label}</Chip>
-                              {e.impact && <Chip tone={IMPACT[e.impact] || "muted"}>{e.impact} impact</Chip>}
-                              {(e.coins || []).map((c) => <Chip key={c} tone="gold">{c}</Chip>)}
-                            </div>
-                            {e.note && <p className="text-[14px] text-bz-muted mt-2">{e.note}</p>}
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </section>
-            ));
+            const end = windowEnd();
+            const soon = items.filter((e) => String(e.date).slice(0, 10) <= end);
+            const later = items.filter((e) => String(e.date).slice(0, 10) > end);   // e.g. the next halving
+            const group = (list) => Object.entries(list.reduce((m, e) => { const k = String(e.date).slice(0, 10); (m[k] = m[k] || []).push(e); return m; }, {}));
+            return (
+              <>
+                {!soon.length && <Empty icon={CalendarDays} title={`No events in the next ${WINDOW_DAYS} days`} sub="New events are added as they're announced." />}
+                {group(soon).map(([date, evs]) => <DaySection key={date} date={date} evs={evs} />)}
+                {later.length > 0 && (
+                  <div className="space-y-5" data-testid="cal-later">
+                    <h2 className="font-bzdisplay text-[18px] font-bold pt-2">Further ahead</h2>
+                    {group(later).map(([date, evs]) => <DaySection key={date} date={date} evs={evs} />)}
+                  </div>
+                )}
+              </>
+            );
           }}
         </Loadable>
       </div>

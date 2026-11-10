@@ -25,8 +25,8 @@ function fgTone(v) {
 }
 
 export function FearGreed({ fg }) {
-  if (!fg || fg.value == null) return null;
-  const v = Math.max(0, Math.min(100, Number(fg.value)));
+  if (!fg || fg.value == null || !Number.isFinite(Number(fg.value))) return null;   // never show "NaN" (QA 10 Nov)
+  const v = Math.round(Math.max(0, Math.min(100, Number(fg.value))));
   return (
     <div className="rounded-bzbtn border border-bz-line bg-bz-card px-3.5 py-3" data-testid="fear-greed">
       <div className="text-[14px] text-bz-muted">Market mood</div>
@@ -119,7 +119,7 @@ export default function PulseStrip({ showCycle = true, compact = false }) {
           <div className="rounded-bzbtn border border-bz-line bg-bz-card px-3.5 py-3">
             <div className="text-[14px] text-bz-muted">Whole crypto market</div>
             <div className="text-[20px] font-semibold tabular mt-1">{usdShort(p.total_mcap_usd)}</div>
-            {p.btc_dominance_pct != null && <div className="text-[12px] text-bz-muted">Bitcoin is {Number(p.btc_dominance_pct).toFixed(1)}% of it</div>}
+            {Number.isFinite(Number(p.btc_dominance_pct)) && p.btc_dominance_pct != null && <div className="text-[12px] text-bz-muted">Bitcoin is {Number(p.btc_dominance_pct).toFixed(1)}% of it</div>}
           </div>
         )}
         {etf && etf.net_usd_m != null && !compact && (
@@ -153,8 +153,8 @@ function Change({ v }) {
 }
 
 function Mood({ fg }) {
-  if (!fg || fg.value == null) return null;
-  const v = Math.max(0, Math.min(100, Number(fg.value)));
+  if (!fg || fg.value == null || !Number.isFinite(Number(fg.value))) return null;   // never show "NaN" (QA 10 Nov)
+  const v = Math.round(Math.max(0, Math.min(100, Number(fg.value))));
   return (
     <div className="min-w-0" data-testid="fear-greed">
       <p className="text-[14px] text-bz-muted">Market mood</p>
@@ -196,7 +196,7 @@ export function MarketStrip({ pulse: p }) {
           <div className="px-5 py-4 border-t sm:border-t-0 sm:border-l border-bz-line min-w-0">
             <p className="text-[14px] text-bz-muted">Whole crypto market</p>
             <p className="font-bzdisplay text-[25px] font-bold tabular leading-tight mt-0.5">{usdShort(p.total_mcap_usd)}</p>
-            {p.btc_dominance_pct != null && <p className="text-[13px] text-bz-muted">Bitcoin is {Number(p.btc_dominance_pct).toFixed(1)}% of it</p>}
+            {Number.isFinite(Number(p.btc_dominance_pct)) && p.btc_dominance_pct != null && <p className="text-[13px] text-bz-muted">Bitcoin is {Number(p.btc_dominance_pct).toFixed(1)}% of it</p>}
           </div>
         )}
         {etf && etf.net_usd_m != null && (

@@ -8,6 +8,19 @@ export function inr(v, decimals = 0) {
   return `${n < 0 ? "−" : ""}₹${Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}`;
 }
 
+// A coin price in rupees with enough decimals to mean something: ₹71,23,456 · ₹16.42 · ₹0.0009184 (QA 10 Nov: PEPE
+// showed "₹0" and DOGE "₹6" as an average price).
+export function inrPrice(v) {
+  const n = num(v);
+  if (n === null) return "—";
+  const a = Math.abs(n);
+  if (a >= 100 || a === 0) return inr(n, 0);
+  if (a >= 1) return inr(n, 2);
+  const sig = Number(a.toPrecision(4));
+  const dec = Math.min(12, Math.max(2, -Math.floor(Math.log10(a)) + 3));
+  return `${n < 0 ? "−" : ""}₹${sig.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: dec })}`;
+}
+
 const trimZeros = (t) => (t.includes(".") ? t.replace(/0+$/, "").replace(/\.$/, "") : t);
 
 // ₹12.4 L / ₹1.2 Cr for chart axes and tight tiles.

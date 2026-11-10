@@ -60,7 +60,7 @@ function ForecastChart({ f }) {
   );
 }
 
-function Forecast({ symbol }) {
+function Forecast({ symbol, verdict }) {
   const can = useFeature("forecast");
   const [h, setH] = useState(7);
   const [s, run] = useTool();
@@ -90,6 +90,18 @@ function Forecast({ symbol }) {
             <div className="text-[14px] text-bz-muted">Range {usd(f.low_usd)} – {usd(f.high_usd)} · from {usd(f.last_price_usd)} now</div>
           </div>
           <ForecastChart f={f} />
+          {(() => {
+            // QA 10 Nov: "Bearish 58%" next to "+2.5% in 30 days" with no explanation confused beginners.
+            const up = Number(f.expected_move_pct) > 0, down = Number(f.expected_move_pct) < 0;
+            if (!verdict || !((verdict === "Bearish" && up) || (verdict === "Bullish" && down))) return null;
+            return (
+              <p className="text-[14px] rounded-bzbtn bg-bz-inset px-3 py-2.5" data-testid="forecast-vs-verdict">
+                Why this differs from today's {verdict.toLowerCase()} verdict: the verdict reads the recent trend and momentum,
+                while the forecast projects the coin's long-run drift and jumpiness. A small expected move inside a wide range
+                like this one means neither points clearly either way.
+              </p>
+            );
+          })()}
           <div className="flex flex-wrap items-center gap-2 text-[12px] text-bz-muted">
             {f.model && <Chip>{f.model === "kronos" ? "AI model" : "Statistical model"}</Chip>}
             {f.as_of && <span>As of {ago(f.as_of)}</span>}
@@ -214,7 +226,7 @@ export default function CoinPage() {
             )}
           </div>
           <div className="space-y-5">
-            <Forecast symbol={symbol} />
+            <Forecast symbol={symbol} verdict={v?.verdict} />
             <Debate symbol={symbol} />
           </div>
         </div>

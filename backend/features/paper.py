@@ -1,6 +1,7 @@
 """Paper Money: ₹1,00,000 of practice money, started from a crypto plan (or a basket).
 
-paper {_id: uid, start_inr, cash_inr, positions: {SYM: {qty, cost_inr}}, plan_id, started_at, trades: [...]}
+paper {_id: uid, start_inr, cash_inr, positions: {SYM: {qty, cost_inr}}, plan_id, plan_split {SYM: pct} (the
+       plan's split when started or last rebalanced), started_at, trades: [...]}
 paper_history {_id: "<uid>:<date>", user_id, date, value_inr}
 """
 from __future__ import annotations
@@ -17,7 +18,7 @@ from crypto.fx import usd_inr
 from growth import events
 from growth.clock import IST, utcnow
 from state import db
-from util import iso
+from util import iso, smart_round
 
 router = APIRouter(tags=["paper"])
 START_INR = 100_000.0
@@ -61,7 +62,7 @@ async def view(user: dict, doc: Optional[dict] = None) -> dict:
         val = p["qty"] * price
         total += val
         avg = p["cost_inr"] / p["qty"] if p["qty"] else 0
-        rows.append({"symbol": s, "qty": p["qty"], "avg_price_inr": round(avg, 4), "price_inr": round(price, 4),
+        rows.append({"symbol": s, "qty": p["qty"], "avg_price_inr": smart_round(avg), "price_inr": smart_round(price),
                      "value_inr": round(val, 2), "pnl_pct": round((price / avg - 1) * 100, 2) if avg else 0.0})
     hist = [{"date": h["date"], "value_inr": round(h["value_inr"], 2)}
             async for h in db().paper_history.find({"user_id": uid}).sort("date", 1).limit(400)]
@@ -86,11 +87,21 @@ async def _plan_drift(uid: str, doc: dict) -> Optional[dict]:
         return None
     want = {a["symbol"] for a in plan["allocation"] if a["symbol"] != "USDT" and a["pct"] > 0}
     have = {s for s, p in (doc.get("positions") or {}).items() if p.get("qty", 0) > 0}
-    if want == have:
+    # Only a change to the plan counts, not the member's own trades (QA 10 Nov: buying DOGE by hand said the plan
+    # "is now 40% BTC…" though the plan never changed). The split is saved when Paper Money starts or rebalances.
+    saved = doc.get("plan_split")
+    if saved is not None:
+        if saved == split_of(plan):
+            return None
+    elif not (want - have):                # started before the split was saved: only flag coins the plan added
         return None
     return {"plan_id": plan["_id"], "goal_name": plan.get("goal_name"),
             "plan_split": [{"symbol": a["symbol"], "pct": a["pct"]} for a in plan["allocation"]],
             "not_in_plan": sorted(have - want), "missing": sorted(want - have)}
+
+
+def split_of(plan: dict) -> dict[str, float]:
+    return {a["symbol"]: a["pct"] for a in plan.get("allocation") or [] if a.get("pct")}
 
 
 async def buy_many(user: dict, amounts_inr: dict[str, float], *, plan_id: Optional[str] = None, fresh: bool = False,
@@ -137,6 +148,8 @@ async def start(body: StartIn, user: dict = Depends(user_dep())):
     # 90% goes in by the plan's mix; ₹10,000 stays as cash so the first practice trade works.
     amounts = {a["symbol"]: START_INR * 0.9 * a["pct"] / 100 for a in plan["allocation"]}
     doc = await buy_many(user, amounts, plan_id=body.plan_id, fresh=True, note="plan start")
+    doc["plan_split"] = split_of(plan)
+    await db().paper.update_one({"_id": doc["_id"]}, {"$set": {"plan_split": doc["plan_split"]}})
     await db().paper_history.delete_many({"user_id": str(user["_id"])})
     await db().crypto_plans.update_one({"_id": body.plan_id}, {"$set": {"paper_started": True}})
     await events.track(db(), "paper_started", user_id=str(user["_id"]))
@@ -197,6 +210,8 @@ async def rebalance(user: dict = Depends(user_dep())):
     await db().paper.replace_one({"_id": uid}, doc)
     amounts = {a["symbol"]: total * 0.9 * a["pct"] / 100 for a in plan["allocation"]}
     doc = await buy_many(user, amounts, plan_id=plan["_id"], note="rebalance to plan")
+    doc["plan_split"] = split_of(plan)
+    await db().paper.update_one({"_id": uid}, {"$set": {"plan_split": doc["plan_split"]}})
     await events.track(db(), "paper_rebalanced", user_id=uid)
     return await view(user, doc)
 
