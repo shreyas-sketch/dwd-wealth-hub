@@ -146,12 +146,16 @@ NOT_COINS = {"WBTC", "WETH", "STETH", "WSTETH", "WEETH", "EETH", "CBBTC", "CBETH
              "RSETH", "SFRXETH", "TBTC", "LBTC", "SOLVBTC", "BTCB", "JITOSOL", "MSOL", "BNSOL", "JUPSOL", "WBETH",
              "XAUT", "PAXG", "BUIDL", "USYC", "OUSG", "USTB", "WTRX", "WBNB", "WAVAX", "WSOL", "WHYPE"}
 
+# Privacy coins: delisted by several major exchanges and generally not listed by Indian ones, so no daily call on them
+# for webinar members (QA 10 Nov: Monero entered the top 10). Revisit with counsel before adding any back.
+PRIVACY_COINS = {"XMR"}
+
 
 def is_plain_coin(row: dict) -> bool:
     sym = str(row.get("symbol") or "").upper()
     if not sym or not sym.isalnum():                  # FIGR_HELOC, BSC-USD, USDC.E …
         return False
-    if sym in STABLES or sym in NOT_COINS or "USD" in sym:   # USDS, USD1, PYUSD …
+    if sym in STABLES or sym in NOT_COINS or sym in PRIVACY_COINS or "USD" in sym:   # USDS, USD1, PYUSD …
         return False
     return True
 

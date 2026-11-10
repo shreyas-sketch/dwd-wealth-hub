@@ -281,3 +281,91 @@ async def test_verdict_rerun_replaces_the_whole_days_list(mdb):
     assert r["coins"] == 10
     assert await mdb.verdicts.count_documents({"date": day, "symbol": "OLDCOIN"}) == 0
     assert await mdb.verdicts.count_documents({"date": day}) == 10
+
+
+# ---------------------------------------------------------------- 10 Nov content review ----
+_IND = {"price": 553.8, "rsi14": 39.9, "ema20": 594.9, "ema50": 570.5, "chg7": -3.1, "chg30": -8.2, "vol30_ann": 61.3,
+        "drawdown90": -14.0, "daily_vol": 0.03, "drift": 0.0}
+
+
+def test_rule_points_use_plain_words_and_dollar_prices():
+    import itertools
+    from features.verdicts import rule_verdict
+    for ema20, rsi in itertools.product((550.0, 600.0), (20.0, 40.0, 60.0, 80.0)):
+        _, _, bull, bear = rule_verdict({**_IND, "ema20": ema20, "rsi14": rsi}, rank=9)
+        for sig in bull + bear:
+            assert "RSI" not in sig.point + sig.evidence and "EMA" not in sig.point + sig.evidence
+            if sig.evidence.startswith("20-day avg"):
+                assert "$" in sig.evidence
+
+
+async def test_ai_prompts_carry_no_indicator_names_or_bare_prices(monkeypatch):
+    import llm
+    import market
+    from features import verdicts
+    seen = []
+
+    async def capture(**kw):
+        seen.append(kw["system"] + "\n" + kw["prompt"])
+        raise llm.LLMError("stop")
+    monkeypatch.setattr(llm, "complete_json", capture)
+    await verdicts.committee("XMR", "Monero", _IND)
+
+    async def hist(sym, days):
+        return [(i, 500.0 + i) for i in range(150)]
+
+    async def search(q):
+        return {"name": "Monero", "rank": 9}
+    monkeypatch.setattr(market, "history", hist)
+    monkeypatch.setattr(market, "search", search)
+    await verdicts.debate_for("XMR")
+    assert len(seen) == 2
+    for text in seen:
+        data = text.split("Data:")[1].split("\n")[0]
+        assert "RSI" not in data and "EMA" not in data
+        assert "price $" in data
+        assert "Never use indicator names" in text
+
+
+async def test_ai_reply_jargon_is_reworded(monkeypatch):
+    import llm
+    from features import verdicts
+
+    async def jargon(**kw):
+        return {"verdict": "Bearish", "confidence": 60, "summary": "Price of 553.8 is weak.",
+                "bull": ["RSI is 39.9, so selling may be tired."],
+                "bear": ["Price is below both the EMA20 (594.9) and EMA50 (570.5)."], "chair": "Bearish. RSI 39.9 is weak."}
+    monkeypatch.setattr(llm, "mode", lambda: "live")
+    monkeypatch.setattr(llm, "complete_json", jargon)
+    out = await verdicts.committee("XMR", "Monero", _IND)
+    text = " ".join([out["summary"], out["chair"], *out["bull"], *out["bear"]])
+    assert "RSI" not in text and "EMA" not in text and "594.9" not in text
+    assert "$553.8" in out["summary"]
+    assert out["bear"] == ["Price is below both the 20-day average and 50-day average."]
+
+
+async def test_monero_is_left_out_of_the_top_10_and_old_rows_removed(mdb):
+    import maintenance
+    import market
+    assert not market.is_plain_coin({"symbol": "XMR"})
+    d = mdb
+    await d.verdicts.insert_one({"_id": "2026-11-10:XMR", "symbol": "XMR", "date": "2026-11-10", "verdict": "Bearish"})
+    await d.verdict_outcomes.insert_one({"_id": "o-xmr", "symbol": "XMR"})
+    await maintenance.drop_non_coin_verdicts(d)
+    assert await d.verdicts.count_documents({"symbol": "XMR"}) == 0
+    assert await d.verdict_outcomes.count_documents({"symbol": "XMR"}) == 0
+
+
+async def test_stored_verdicts_are_reworded_on_deploy(mdb):
+    import maintenance
+    d = mdb
+    await d.verdicts.insert_one({"_id": "2026-11-10:LTC", "symbol": "LTC", "date": "2026-11-10", "verdict": "Bearish",
+                                 "summary": "Price of 82.4 is soft.", "chair": "Bearish.",
+                                 "bull": ["RSI 39.9: momentum is weak but not extreme."],
+                                 "bear": ["Below both the EMA20 (85.1) and EMA50 (88.0)."]})
+    assert await maintenance.plain_words_in_verdicts(d) == 1
+    v = await d.verdicts.find_one({"_id": "2026-11-10:LTC"})
+    assert v["bull"] == ["Momentum is weak but not extreme."]
+    assert v["bear"] == ["Below both the 20-day average and 50-day average."]
+    assert v["summary"] == "Price of $82.4 is soft."
+    assert await maintenance.plain_words_in_verdicts(d) == 0      # idempotent

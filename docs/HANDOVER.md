@@ -106,6 +106,8 @@ cd ../backend && python ../scripts/qa_server.py     # http://localhost:8765, sam
 9. **Workers.** Run 2 or more web workers (`WEB_CONCURRENCY`, default 2). A database lock makes each scheduled job run once. Load test results are in `docs/LOAD_TEST.md`.
 10. **Razorpay pricing.** Prices are ₹2,000 + GST and ₹5,000 + GST. Create the Razorpay plans at ₹2,360 and ₹5,900 a month.
 11. **Counsel.** Get a view on the coin-level calls in Verdicts, Monday Picks, Baskets and the Radar, and on placing orders on users' own exchange accounts.
+    Privacy coins are left out of the daily top 10 (`PRIVACY_COINS` in `backend/market/__init__.py`, Monero today);
+    ask counsel before adding any back.
 
 ## 5. Content the team loads in Admin
 

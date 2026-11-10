@@ -46,7 +46,21 @@ async def reword_exchange_claim(db) -> int:
     return n
 
 
-FIXES = [fix_legacy_radar_checks, drop_non_coin_verdicts, reword_exchange_claim]
+async def plain_words_in_verdicts(db) -> int:
+    """Stored verdicts quoted indicator names and raw values ("below both the EMA20 (594.9) and EMA50 (570.5)",
+    "RSI is 39.9") and prices without a $ sign. Reword them the way new verdicts are written."""
+    from features.verdicts import plain_out
+    rx = {"$regex": r"\bRSI\b|\bEMA|(?i:\bprice[a-z]*( of| at| is| near| around| about)? \d)"}
+    n = 0
+    q = {"$or": [{"bull": rx}, {"bear": rx}, {"chair": rx}, {"summary": rx}]}
+    async for v in db.verdicts.find(q, {"bull": 1, "bear": 1, "chair": 1, "summary": 1}):
+        new = plain_out({k: v.get(k) for k in ("bull", "bear", "chair", "summary")})
+        await db.verdicts.update_one({"_id": v["_id"]}, {"$set": new})
+        n += 1
+    return n
+
+
+FIXES = [fix_legacy_radar_checks, drop_non_coin_verdicts, reword_exchange_claim, plain_words_in_verdicts]
 
 
 async def run_data_fixes(db) -> dict:

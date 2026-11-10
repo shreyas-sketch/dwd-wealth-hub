@@ -106,3 +106,10 @@ Webinar report + Day 3 CSV = accounts created in [start, end] whose effective pa
 `QA_MODE=true` → all vendors fake, `/api/qa/login` enabled, demo content seeded (airdrops, baskets, events, picks, crash notes, KB sample,
 ETF flows, verdicts for today, radar, news) so every screen has data. `scripts/qa_server.py` starts uvicorn with mongomock or a local Mongo
 (prefer mongomock-motor in-process so no Mongo is needed) on :8765 serving the built frontend.
+
+## Verdict wording (10 Nov 2026)
+The committee and debate prompts get the indicators in plain words (`plain_data`: "20-day average price is 4.3% above
+the 50-day average", "momentum is weak"), never "RSI"/"EMA" or their raw values, and are told to write prices as $.
+`plain_out` rewords any reply that still slips (backstop), and the startup fix `plain_words_in_verdicts` does the same
+for stored verdicts. Rule-made points say "Momentum is …" with "Momentum score N of 100" as the evidence.
+Privacy coins (`PRIVACY_COINS`: XMR) are excluded from the top 10 like wrapped and tokenised assets.
