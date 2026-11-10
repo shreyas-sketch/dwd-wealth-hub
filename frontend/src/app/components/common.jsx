@@ -97,7 +97,7 @@ export function LockCard({ feature, planNeeded, kind = "locked", used, limit, ms
         </LinkButton>
       ) : (
         <LinkButton to={`/login?next=${encodeURIComponent(window.location.pathname)}`} className="w-full mt-4" onClick={onAction}>
-          Create free account
+          Create your account
         </LinkButton>
       )}
     </Card>

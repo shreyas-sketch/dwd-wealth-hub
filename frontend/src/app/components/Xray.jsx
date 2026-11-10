@@ -9,6 +9,7 @@ import { track } from "@/lib/attribution";
 import { usd, usdShort } from "@/lib/format";
 import { Button, Card, Chip, Disclaimer, Label, LinkButton, Meter } from "./ui";
 import { LockCard, Move, UsageLine, VerdictChip, XRAY } from "./common";
+import { newAccountLine, signupLabel, useTrialDays } from "@/lib/trial";
 
 const SEV = { high: "bear", medium: "gold", low: "muted" };
 const KIND = { coin: "Coin", link: "Link", message: "Message" };
@@ -117,6 +118,7 @@ export function XrayResult({ r }) {
 
 export default function XrayBox({ onDone, autoFocus = false }) {
   const { user } = useAuth();
+  const trialDays = useTrialDays();
   const qc = useQueryClient();
   const [query, setQuery] = useState("");
   const [state, setState] = useState({ status: "idle" });
@@ -157,9 +159,9 @@ export default function XrayBox({ onDone, autoFocus = false }) {
         <LockCard feature="xray" kind="limit" planNeeded={state.detail.plan_needed} used={state.detail.used} limit={state.detail.limit} msg={state.detail.msg} />
       ) : (
         <Card className="border-bz-gold" data-testid="xray-anon-limit">
-          <p className="font-bzserif text-[22px] font-semibold leading-tight">You've used today's free check.</p>
-          <p className="text-[15px] text-bz-muted mt-1.5">Create a free account for more checks. It takes 30 seconds with your mobile number.</p>
-          <LinkButton to="/login?next=/app/xray" className="w-full mt-4" data-testid="xray-signup">Create a free account for more checks</LinkButton>
+          <p className="font-bzdisplay text-[22px] font-bold leading-tight">You've used today's free check.</p>
+          <p className="text-[15px] text-bz-muted mt-1.5">{newAccountLine(trialDays)} It takes 30 seconds with your mobile number.</p>
+          <LinkButton to="/login?next=/app/xray" className="w-full mt-4" data-testid="xray-signup">{signupLabel(trialDays)}</LinkButton>
         </Card>
       ))}
       {state.status === "done" && <XrayResult r={state.data} />}

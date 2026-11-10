@@ -63,14 +63,28 @@ def _edits(a: str, b: str) -> int:
 
 def lookalike_brand(host: str) -> Optional[str]:
     """'blnance.com', 'kuc0in.io', 'metamsk.app' → the brand being copied (1–2 letters off, or digits for letters)."""
+    # Each dot label whole ("bin-ance") and each hyphen part on its own ("blnance-bonus" → "blnance"). A hyphen part
+    # must be within one letter of the brand, and real English words near a brand name are skipped, so
+    # "finance-news.com" or "balance-check.com" aren't called fakes.
+    parts = []
     for label in host.split("."):
-        lab = label.replace("-", "").translate(_LOOK).replace("rn", "m").replace("vv", "w")
+        parts.append((label.replace("-", ""), None))
+        parts.extend((p, 1) for p in label.split("-") if p and "-" in label)
+    for label, max_edits in parts:
+        if label in COMMON_WORDS:
+            continue
+        lab = label.translate(_LOOK).replace("rn", "m").replace("vv", "w")
         if len(lab) < 4:
             continue
         for b in BRANDS:
-            if lab == b or (len(b) >= 5 and abs(len(lab) - len(b)) <= 2 and _edits(lab, b) <= (1 if len(b) < 7 else 2)):
+            allowed = max_edits if max_edits is not None else (1 if len(b) < 7 else 2)
+            if lab == b or (len(b) >= 5 and abs(len(lab) - len(b)) <= 2 and _edits(lab, b) <= allowed):
                 return b
     return None
+
+
+COMMON_WORDS = {"finance", "balance", "advance", "romance", "nuance", "insurance", "binary", "kitchen", "okay",
+                "metal", "meta", "trust", "coins", "phantom", "ledger", "bitcoin", "crypto", "exchange", "market"}
 ODD_TLDS = {"xyz", "top", "click", "live", "site", "online", "shop", "icu", "buzz", "cc", "vip", "club", "work",
             "loan", "win", "bid", "rest", "gq", "tk", "ml", "cf"}
 SHORTENERS = {"bit.ly", "tinyurl.com", "t.co", "goo.gl", "cutt.ly", "rb.gy", "is.gd", "t.me", "wa.me", "chat.whatsapp.com"}
@@ -126,8 +140,23 @@ def classify(q: str) -> str:
     return "coin"
 
 
-def _flag(title: str, detail: str, severity: str) -> dict:
-    return {"title": title, "detail": detail, "severity": severity}
+def _flag(title: str, detail: str, severity: str, decisive: bool = False) -> dict:
+    """decisive: on its own this means likely scam (e.g. a site posing as a real exchange), whatever else is seen."""
+    f = {"title": title, "detail": detail, "severity": severity}
+    if decisive:
+        f["decisive"] = True
+    return f
+
+
+# Coins whose price runs on hype and memes rather than use. CoinGecko's categories catch most ("Meme", "Dog-Themed",
+# "Frog-Themed" …); this list covers the big ones when categories aren't available.
+MEME_SYMBOLS = {"DOGE", "SHIB", "PEPE", "WIF", "BONK", "FLOKI", "TRUMP", "BRETT", "POPCAT", "MOG", "BOME", "NEIRO",
+                "MEW", "TURBO", "PNUT", "GOAT", "FARTCOIN", "SPX", "MOODENG", "DOGS", "BABYDOGE", "PENGU"}
+
+
+def is_meme(c: dict) -> bool:
+    cats = " ".join(str(x) for x in (c.get("categories") or [])).lower()
+    return "meme" in cats or (str(c.get("symbol") or "").upper() in MEME_SYMBOLS)
 
 
 def link_flags(url: str) -> tuple[list[dict], list[str]]:
@@ -144,7 +173,7 @@ def link_flags(url: str) -> tuple[list[dict], list[str]]:
     except ValueError:
         pass
     if "xn--" in host:
-        red.append(_flag("Disguised letters in the address", "This uses look-alike characters to copy a real site's name.", "high"))
+        red.append(_flag("Disguised letters in the address", "This uses look-alike characters to copy a real site's name.", "high", decisive=True))
     root = ".".join(host.split(".")[-2:]) if host.count(".") >= 1 else host
     legit = any(host == d or host.endswith("." + d) for d in LEGIT_DOMAINS)
     if legit:
@@ -154,12 +183,12 @@ def link_flags(url: str) -> tuple[list[dict], list[str]]:
         if hit:
             red.append(_flag(f"Copies the name '{hit[0]}' but isn't the real site",
                              f"The real {BRAND_NAMES.get(hit[0], hit[0].title())} site is not {host}. "
-                             "Look-alike sites steal logins and wallets.", "high"))
+                             "Look-alike sites steal logins and wallets.", "high", decisive=True))
         elif lookalike_brand(host):
             b = lookalike_brand(host)
             red.append(_flag(f"Spelled almost like '{b}' but isn't the real site",
                              f"{host} swaps or drops a letter to look like {BRAND_NAMES.get(b, b.title())}. "
-                             "Look-alike sites steal logins and wallets.", "high"))
+                             "Look-alike sites steal logins and wallets.", "high", decisive=True))
         elif host and not any(f["severity"] == "high" for f in red):
             red.append(_flag("Not a crypto site we know",
                              "We only recognise the main exchanges, wallets and price sites. Check who runs this site "
@@ -270,6 +299,9 @@ async def coin_flags(q: str) -> tuple[list[dict], list[str], Optional[dict]]:
     if c.get("unlisted") or not c.get("rank"):
         red.append(_flag("Not ranked by market size", "Unranked tokens are tiny or unverified — easy to manipulate.", "high"))
     rank = c.get("rank")
+    if is_meme(c):
+        red.append(_flag("Meme coin", "Its price runs on hype and social media, not on use. Meme coins often fall 80–90% "
+                         "after a run, even big ones.", "medium"))
     if rank and rank <= 20:
         green.append(f"Top {rank} coin by market size")
     elif rank and rank <= 100:
@@ -325,6 +357,10 @@ def score_of(red: list[dict], green: list[str], rank: Optional[int] = None) -> t
         s = min(s, 25)
     elif any(f["title"].startswith(("Brand new", "New coin")) for f in red):
         s = max(s, 30)                     # a coin under 3 months old is never shown as "safe"
+    if any(f["title"] == "Meme coin" for f in red):
+        s = max(s, 35)                     # a meme coin is never "Looks safe", even in the top 10 (QA 10 Nov: Pepe)
+    if any(f.get("decisive") for f in red):
+        s = max(s, 75)                     # a site posing as a real exchange is a likely scam (QA: blnance.com)
     s = max(0, min(100, s))
     return s, ("safe" if s < 30 else "risky" if s < 60 else "likely_scam")
 
@@ -405,16 +441,25 @@ async def xray(body: XRayIn, request: Request, response: Response):
     if not body.query.strip():
         raise HTTPException(status_code=400, detail={"code": "empty", "msg": "Type a coin name, link or message to check."})
     user = await optional_user(request)
+    had_cookie = events.anon_id_from(request) is not None
     anon = events.ensure_anon_cookie(request, response)
     if user:
         usage = await plans.consume(db(), user, "xray")
     else:
         per_day = (await appsettings.get(db()))["anon_xray_per_day"]
         from accounts.routes import client_ip
+        ip = client_ip(request)
+        if not had_cookie:
+            # No valid visitor cookie (cleared, forged, or a script): a real browser gets one from the page view
+            # before its first check, so these share one small allowance per network instead of each getting
+            # a fresh one (QA 10 Nov: the logged-out limit could be bypassed). The check also counts against
+            # the cookie issued with this answer.
+            await plans.anon_consume(db(), f"nocookie:{ip}", "xray",
+                                     int(os.environ.get("ANON_XRAY_NOCOOKIE_PER_IP_DAY", "30") or 30))
         usage = await plans.anon_consume(db(), f"a:{anon}", "xray", per_day)
         # Per-IP backstop only (CGNAT: many visitors share one carrier IP — see OTP_MAX_PER_IP_HOUR).
         ip_cap = int(os.environ.get("ANON_XRAY_PER_IP_DAY", "1000") or 1000)
-        await plans.anon_consume(db(), f"ip:{client_ip(request)}", "xray", ip_cap)
+        await plans.anon_consume(db(), f"ip:{ip}", "xray", ip_cap)
     try:
         out = await cached_xray(body.query)
     except HTTPException:

@@ -16,6 +16,7 @@ import XrayBox from "../components/Xray";
 import { CycleMeter, MarketStrip, usePulse } from "../components/Pulse";
 import { PlanCard, usePlansCatalog } from "../components/PlansView";
 import { ErrorCard, LinkButton, Skeleton } from "../components/ui";
+import { newAccountLine, signupLabel } from "@/lib/trial";
 
 const TIERS = [
   {
@@ -75,7 +76,7 @@ export default function Landing() {
   const cat = usePlansCatalog();
   const plans = cat.data?.plans || [];
   const cta = user ? "/app" : "/login";
-  const ctaLabel = user ? "Open the app" : "Create a free account";
+  const ctaLabel = user ? "Open the app" : signupLabel(cat.data?.trial_days);
   return (
     <PublicLayout wide>
       {/* Hero: the tool people came for */}
@@ -116,7 +117,7 @@ export default function Landing() {
 
         <section aria-labelledby="inside-title">
           <h2 id="inside-title" className="font-bzdisplay text-[31px] sm:text-[39px] font-bold leading-[1.08] max-w-[640px]">What you get with an account</h2>
-          {cat.data?.trial_days ? <p className="text-[17px] text-bz-muted mt-2">New accounts get every tool free for {cat.data.trial_days} days.</p> : null}
+          <p className="text-[17px] text-bz-muted mt-2">{newAccountLine(cat.data?.trial_days)}</p>
           <div className="mt-8 grid gap-8 lg:grid-cols-3">
             {TIERS.map((tier) => (
               <div key={tier.name}>

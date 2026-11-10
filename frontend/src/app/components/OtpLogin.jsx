@@ -3,11 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { deviceId, getUtm } from "@/lib/attribution";
 import { Button, inputCls } from "./ui";
+import { useTrialDays } from "@/lib/trial";
 
 const digits = (s) => String(s || "").replace(/\D/g, "");
 
 export default function OtpLogin({ onDone, onStep }) {
   const { requestOtp, verifyOtp } = useAuth();
+  const trialDays = useTrialDays();
   const [step, setStep] = useState("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -67,7 +69,7 @@ export default function OtpLogin({ onDone, onStep }) {
         <Button type="submit" className="w-full h-14" loading={busy} disabled={busy || wait > 0} data-testid="login-send">
           {busy ? "Sending" : wait > 0 ? `Try again in ${wait}s` : "Send code"}
         </Button>
-        <p className="text-[13px] text-bz-muted">New here? The same step creates your free account.</p>
+        <p className="text-[13px] text-bz-muted">New here? The same step creates your account. {trialDays > 0 ? `Every tool is free for ${trialDays} day${trialDays === 1 ? "" : "s"}.` : ""}</p>
       </form>
     );
   }

@@ -38,10 +38,15 @@ NEW_CLAIM = "One of the largest coins by market value, so it trades a lot every 
 
 
 async def reword_exchange_claim(db) -> int:
-    """Stored verdicts carried a filler point claiming "listed on every major exchange", which the app never checked."""
+    """Stored verdicts carried a filler point claiming "listed on every major exchange", which the app never checked.
+    It appears in the "case for" list and, when it was the first point, inside the chair's sentence too."""
     n = 0
-    async for v in db.verdicts.find({"bull": OLD_CLAIM}, {"bull": 1}):
-        await db.verdicts.update_one({"_id": v["_id"]}, {"$set": {"bull": [NEW_CLAIM if b == OLD_CLAIM else b for b in v["bull"]]}})
+    flt = {"$or": [{"bull": OLD_CLAIM}, {"chair": {"$regex": "listed on every major exchange"}}]}
+    async for v in db.verdicts.find(flt, {"bull": 1, "chair": 1}):
+        upd = {"bull": [NEW_CLAIM if b == OLD_CLAIM else b for b in (v.get("bull") or [])]}
+        if isinstance(v.get("chair"), str):
+            upd["chair"] = v["chair"].replace(OLD_CLAIM, NEW_CLAIM)
+        await db.verdicts.update_one({"_id": v["_id"]}, {"$set": upd})
         n += 1
     return n
 

@@ -224,6 +224,6 @@ async def anon_consume(db, anon_key: str, feature: str, per_day: int) -> dict:
         # 402 "limit" (contract); `signup: true` tells the public page to offer the free account.
         raise HTTPException(status_code=402, detail={
             "code": "limit", "signup": True, "plan_needed": "free", "feature": feature, "used": used, "limit": per_day,
-            "msg": "Create your free account to check more."})
+            "msg": "Create an account to keep checking. It is free and takes 30 seconds."})
     await db.anon_usage.update_one({"_id": key}, {"$inc": {"n": 1}, "$setOnInsert": {"at": utcnow()}}, upsert=True)
     return {"used": used + 1, "limit": per_day}

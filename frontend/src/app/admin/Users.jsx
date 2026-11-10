@@ -68,7 +68,11 @@ function Detail({ id, onClose }) {
               <div className="flex flex-wrap gap-2 items-end">
                 <Field label="Days" className="w-28"><Input type="number" min="1" value={days} onChange={(e) => setDays(Number(e.target.value))} /></Field>
                 <Button variant="secondary" onClick={() => run("trial", "trial", { days })} loading={busy === "trial"} data-testid="admin-trial">Extend</Button>
+                {p.trial_ends_at && new Date(p.trial_ends_at) > new Date() && (
+                  <Button variant="small" onClick={() => run("trial-end", "trial", { days: 0 })} loading={busy === "trial-end"} data-testid="admin-trial-end">End trial now</Button>
+                )}
               </div>
+              <p className="text-[13px] text-bz-muted mt-1">Ending the trial moves the account to its paid or granted plan, or to Free (useful for testing the Free plan).</p>
             </div>
             <div>
               <Label>Access</Label>
