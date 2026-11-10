@@ -119,6 +119,8 @@ async def _deliver(senders: Senders, phone: str, code: str, channel: Channel) ->
     """Returns (result, fell_back)."""
     if channel == "whatsapp" and senders.whatsapp is None:
         channel = "sms"
+    if channel == "sms" and senders.sms is None:           # WhatsApp-only setup: an SMS request goes by WhatsApp
+        channel = "whatsapp" if senders.whatsapp is not None else channel
     order = [senders.sms] if channel == "sms" else [senders.whatsapp, senders.sms]
     order = [s for s in order if s is not None]
     if not order:
@@ -170,7 +172,8 @@ async def request_otp(
         await events.track(db, "otp_failed", anon_id=anon_id,
                            props={"reason": "send_failed", "provider": res.provider,
                                   "error": (res.error or "")[:120]})
-        raise OtpError("send_failed", "We couldn't send the code. Try SMS or try again.", 502)
+        raise OtpError("send_failed", "We couldn't send the code. Try SMS or try again." if senders.sms is not None
+                       else "We couldn't send the code on WhatsApp. Check the number uses WhatsApp, then try again.", 502)
     await events.track(db, "otp_requested", anon_id=anon_id, props={
         "channel": res.channel, "provider": res.provider, "fell_back": fell_back})
     return Challenge(challenge_id, res.channel, TTL_MIN * 60, RESEND_COOLDOWN_S, fell_back)

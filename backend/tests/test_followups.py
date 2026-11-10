@@ -455,3 +455,60 @@ def test_accuracy_endpoint_admin_only_and_job_listed(client):
     assert d["days"] == 30 and [h["horizon_days"] for h in d["horizons"]] == [7, 30]
     r = client.post("/api/admin/jobs/verdict_scoring/run").json()
     assert r["ok"] is True and r["summary"].startswith("Scored 0 verdicts at 7 days")
+
+
+# ---------------------------------------------------------------- WhatsApp-only OTP (AiSensy, no SMS) ----
+def _wa_only_env(monkeypatch, campaign="hub_login_code_"):
+    monkeypatch.setenv("OTP_PROVIDER_MODE", "live")
+    monkeypatch.setenv("AISENSY_API_KEY", "test-key")
+    monkeypatch.setenv("AISENSY_OTP_CAMPAIGN", campaign)
+    monkeypatch.delenv("MSG91_AUTH_KEY", raising=False)
+    monkeypatch.delenv("MSG91_OTP_TEMPLATE_ID", raising=False)
+
+
+def test_whatsapp_used_when_it_is_the_only_channel_even_with_switch_off(monkeypatch):
+    from accounts.otp_providers import build_senders
+    from core import flags
+    _wa_only_env(monkeypatch)
+    monkeypatch.setattr(flags, "is_on", lambda key: False)            # Admin › Features › WhatsApp OTP is off
+    s = build_senders()
+    assert s.sms is None and s.whatsapp is not None and s.whatsapp.campaign == "hub_login_code_"
+
+
+async def test_aisensy_payload_uses_campaign_and_code():
+    import json
+
+    import httpx
+    from accounts.otp_providers import AiSensyWhatsApp
+    seen = {}
+
+    def h(req):
+        seen.update(url=str(req.url), body=json.loads(req.content))
+        return httpx.Response(200, json={"success": "true", "submitted_message_id": "m1"})
+    wa = AiSensyWhatsApp("k", "hub_login_code_", httpx.AsyncClient(transport=httpx.MockTransport(h)))
+    res = await wa.send("+919876543210", "482913", 10)
+    b = seen["body"]
+    assert res.ok and res.ref == "m1" and seen["url"] == "https://backend.aisensy.com/campaign/t1/api/v2"
+    assert b["campaignName"] == "hub_login_code_" and b["destination"] == "919876543210"
+    assert b["templateParams"] == ["482913"]
+    assert b["buttons"] == [{"type": "button", "sub_type": "url", "index": 0, "parameters": [{"type": "text", "text": "482913"}]}]
+
+
+async def test_sms_request_goes_by_whatsapp_when_sms_is_not_set_up():
+    from accounts import otp_service
+    from accounts.otp_providers import Senders, SendResult
+
+    class Wa:
+        channel, name = "whatsapp", "aisensy"
+        ok = True
+
+        async def send(self, phone, code, ttl):
+            return SendResult(Wa.ok, "aisensy", "whatsapp", ref="x", error=None if Wa.ok else "HTTP 400")
+    s = Senders(whatsapp=Wa(), sms=None)
+    res, _ = await otp_service._deliver(s, "+919000000001", "123456", "sms")
+    assert res.ok and res.channel == "whatsapp"
+
+
+def test_otp_request_says_whether_sms_exists(client):
+    r = client.post("/api/auth/otp/request", json={"phone": "9876500123"}).json()
+    assert r["can_sms"] is True                                        # QA console sender offers both

@@ -120,13 +120,15 @@ def build_senders() -> Senders:
         if settings.is_production:
             raise RuntimeError("OTP_PROVIDER_MODE=console is not allowed in production")
         return Senders(whatsapp=ConsoleSender("whatsapp"), sms=ConsoleSender("sms"))
-    wa = None
     from core.flags import is_on
-    if is_on("WHATSAPP_OTP") and os.environ.get("AISENSY_API_KEY"):
-        wa = AiSensyWhatsApp(os.environ["AISENSY_API_KEY"], os.environ.get("AISENSY_OTP_CAMPAIGN", "otp"))
     sms = None
     if os.environ.get("MSG91_AUTH_KEY") and os.environ.get("MSG91_OTP_TEMPLATE_ID"):
         sms = Msg91Sms(os.environ["MSG91_AUTH_KEY"], os.environ["MSG91_OTP_TEMPLATE_ID"])
+    wa = None
+    # The WhatsApp OTP switch chooses WhatsApp over SMS. When SMS isn't set up at all, WhatsApp is the only way in,
+    # so it is used whatever the switch says (turning the switch off must never lock everyone out).
+    if os.environ.get("AISENSY_API_KEY") and (is_on("WHATSAPP_OTP") or sms is None):
+        wa = AiSensyWhatsApp(os.environ["AISENSY_API_KEY"], (os.environ.get("AISENSY_OTP_CAMPAIGN") or "otp").strip())
     if wa is None and sms is None:
         log.error("No OTP provider configured (MSG91_* / AISENSY_*). Logins will fail.")
     return Senders(whatsapp=wa, sms=sms)

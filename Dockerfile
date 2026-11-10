@@ -40,6 +40,6 @@ USER app
 WORKDIR /app/backend
 
 EXPOSE 8001
-# ONE worker: the in-process scheduler must run once. To scale out, set INPROCESS_SCHEDULER=false on the
-# web service and call POST /api/jobs/tick (X-Ingest-Key) from a cron every 5 minutes instead.
+# WEB_CONCURRENCY workers (default 2). Each scheduled job takes a Mongo lock, so it runs once however many
+# workers or replicas there are.
 CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8001} --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips='*' --timeout-keep-alive 75"]

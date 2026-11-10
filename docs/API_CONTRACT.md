@@ -25,7 +25,7 @@ airdrops, autopilot, chart, ask, baskets, radar, calendar, p2p, news`
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
-| POST | /auth/otp/request | `{phone, channel?: "auto"\|"sms"\|"whatsapp"}` | `{challenge_id, channel, sent_to, expires_in, resend_in, is_new, dev_code?}` (`dev_code` only in QA mode) |
+| POST | /auth/otp/request | `{phone, channel?: "auto"\|"sms"\|"whatsapp"}` | `{challenge_id, channel, sent_to, expires_in, resend_in, is_new, can_sms, dev_code?}` (`can_sms` false = WhatsApp-only: hide "Send by SMS") (`dev_code` only in QA mode) |
 | POST | /auth/otp/verify | `{challenge_id, phone, code, name?, utm?, device_id?}` | `{user, is_new}` + cookies. **Creates the account if the number is new.** |
 | GET | /auth/session | — | Always 200: `{user, plan: PlanInfo, reason: null}` when logged in, else `{user: null, plan: null, reason: null\|"expired"\|"revoked"}`. Renews the session from the refresh cookie when the access cookie has expired. The web app uses this on load (no 401 in the console on public pages). |
 | GET | /auth/me | — | `{user, plan: PlanInfo}` (401 if logged out) |

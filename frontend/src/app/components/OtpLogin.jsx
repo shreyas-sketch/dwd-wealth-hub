@@ -103,7 +103,7 @@ export default function OtpLogin({ onDone, onStep }) {
       <div className="flex flex-wrap gap-x-5 gap-y-1 text-[14px]">
         {wait > 0 ? <span className="text-bz-muted">Resend in {wait}s</span>
           : <button type="button" className="text-bz-accent font-semibold py-1" onClick={() => send("auto")} data-testid="login-resend">Resend code</button>}
-        {ch?.channel === "whatsapp" && wait <= 0 && <button type="button" className="text-bz-accent font-semibold py-1" onClick={() => send("sms")}>Send by SMS instead</button>}
+        {ch?.channel === "whatsapp" && ch?.can_sms !== false && wait <= 0 && <button type="button" className="text-bz-accent font-semibold py-1" onClick={() => send("sms")}>Send by SMS instead</button>}
       </div>
     </form>
   );
