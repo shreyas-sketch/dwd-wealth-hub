@@ -219,6 +219,11 @@ async def job_daily(ctx) -> dict:
             watchers = [w["_id"] async for w in d.watchlists.find({"symbols": sym}, {"_id": 1})]
             await alert_many(d, watchers, "verdict_changed", f"{sym} verdict changed: {changed_from} → {out['verdict']}",
                              out.get("summary") or "", link=f"/app/coin/{sym}", dedupe=f"vc:{day}:{sym}")
+    # A coin that dropped out of the list keeps its earlier entry for the same day; remove it so a re-run
+    # ("Run now") replaces the whole list (QA 10 Nov: FIGR_HELOC stayed after the filter changed).
+    if done:
+        rated = [c["symbol"] for c in coins]
+        await d.verdicts.delete_many({"date": day, "symbol": {"$nin": rated}, "backtest": {"$ne": True}})
     return {"coins": done, "changed": changed, "date": day}
 
 

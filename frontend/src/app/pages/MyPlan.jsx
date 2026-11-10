@@ -46,6 +46,7 @@ export default function MyPlan() {
       const { data } = mode === "edit" && current ? await api.put(`/plan/${current.id}`, body) : await api.post("/plan", body);
       await qc.invalidateQueries({ queryKey: ["plans"] });
       qc.invalidateQueries({ queryKey: ["coach"] });
+      qc.invalidateQueries({ queryKey: ["paper"] });   // the practice money may no longer match the edited plan
       if (data?.id) setSel(data.id);
       setMode(null);
     } catch (e) { setErr(apiError(e)); } finally { setBusy(false); }
@@ -53,7 +54,7 @@ export default function MyPlan() {
   const remove = async () => {
     if (!current || !(await confirm({ title: "Delete this plan?", danger: true, confirmLabel: "Delete plan",
       body: `"${current.goal_name}" and its projections will be removed. Paper Money started from it keeps its coins.` }))) return;
-    try { await api.delete(`/plan/${current.id}`); setSel(null); qc.invalidateQueries({ queryKey: ["plans"] }); }
+    try { await api.delete(`/plan/${current.id}`); setSel(null); qc.invalidateQueries({ queryKey: ["plans"] }); qc.invalidateQueries({ queryKey: ["paper"] }); }
     catch (e) { setErr(apiError(e)); }
   };
 
