@@ -2,8 +2,8 @@
 import { useState } from "react";
 import { Download } from "lucide-react";
 import { API_BASE } from "@/lib/api";
-import { Card, Field, Input, Label } from "../components/ui";
-import { AdminLoadable, Kpi, Table, useAdmin } from "./shared";
+import { Card, Field, Input } from "../components/ui";
+import { AdminH, AdminLoadable, Kpi, KpiGrid, Table, useAdmin } from "./shared";
 
 // Calendar date in India (the backend reads these dates as IST days).
 const iso = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(d);
@@ -28,21 +28,24 @@ export default function Webinar() {
         <AdminLoadable q={q} what="the webinar report">
           {(d) => (
             <div className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <KpiGrid cols="grid-cols-2 md:grid-cols-5">
                 <Kpi label="Signups" value={d.signups} />
                 <Kpi label="Logins" value={d.logins} />
                 <Kpi label="Bought ₹2,000" value={d.bought?.lite ?? 0} tone="up" />
                 <Kpi label="Bought ₹5,000" value={d.bought?.pro ?? 0} tone="up" />
-                <Kpi label="Day 3 list" value={d.day3_list_count} tone="gold" sub="signed up, not paid" />
+                <Kpi label="Day 3 list" value={d.day3_list_count} tone="gold" sub="Signed up, not paid" />
+              </KpiGrid>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <a href={csv} className="inline-flex items-center gap-2 min-h-[48px] px-6 rounded-full bg-bz-btn text-bz-on-btn text-[16px] font-semibold hover:opacity-90" data-testid="webinar-csv">
+                  <Download className="w-4 h-4" aria-hidden /> Download the Day 3 list
+                </a>
+                <span className="text-[14px] text-bz-muted">A CSV of the {Number(d.day3_list_count || 0).toLocaleString("en-IN")} people to call for the ₹2,000 plan.</span>
               </div>
-              <a href={csv} className="inline-flex items-center gap-2 min-h-[48px] px-5 rounded-bzbtn bg-bz-accent text-bz-on-accent font-bzmono text-[12px] uppercase tracking-[0.16em]" data-testid="webinar-csv">
-                <Download className="w-4 h-4" aria-hidden /> Download Day 3 list (CSV)
-              </a>
               <Card>
-                <Label>Feature usage</Label>
+                <AdminH>Tools used in this window</AdminH>
                 <Table rows={d.feature_usage} cols={[
-                  { key: "feature", label: "Feature" },
-                  { key: "users", label: "Users", right: true },
+                  { key: "feature", label: "Tool" },
+                  { key: "users", label: "People", right: true },
                   { key: "uses", label: "Uses", right: true },
                 ]} empty="No usage in this window." />
               </Card>

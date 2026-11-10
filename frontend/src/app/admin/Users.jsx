@@ -125,7 +125,7 @@ export default function Users({ initialQ = "" }) {
       <AdminLoadable q={list} what="users">
         {() => (
           <Card className="px-0 sm:px-5 py-2">
-            <p className="text-sm text-bz-muted px-4 sm:px-0 py-2">{Number(total).toLocaleString("en-IN")} accounts</p>
+            <p className="text-sm text-bz-muted px-4 sm:px-0 py-2">{Number(total).toLocaleString("en-IN")} {Number(total) === 1 ? "account" : "accounts"}</p>
             <Table rows={items} onRow={(r) => setSel(r.id)} cols={[
               { key: "phone", label: "Phone", render: (r) => <span className="font-semibold text-bz-accent">{r.phone}</span> },
               { key: "name", label: "Name" },

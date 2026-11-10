@@ -21,6 +21,7 @@ log = logging.getLogger("jobs")
 # name → (label, schedule, "module:function")
 JOBS: dict[str, tuple[str, tuple, str]] = {
     "verdicts_daily": ("Daily AI verdicts (top 10 coins)", ("daily", 5, 30), "features.verdicts:job_daily"),
+    "verdict_scoring": ("Score past verdicts (hit rate)", ("daily", 5, 45), "features.accuracy:job_score"),
     "exchange_reverify": ("Re-check linked exchange keys", ("daily", 5, 40), "features.autopilot:job_reverify"),
     "autopilot_buys": ("SIP Autopilot buys", ("daily", 10, 0), "features.autopilot:job_buys"),
     "paper_snapshot": ("Paper Money daily values", ("daily", 23, 50), "features.paper:job_snapshot"),
@@ -160,6 +161,13 @@ async def listing(db) -> list[dict]:
     for name, (label, sched, _) in JOBS.items():
         last = await db.job_runs.find_one({"name": name}, sort=[("at", -1)])
         out.append({"name": name, "label": label, "schedule": schedule_text(sched),
-                    "last": {"at": iso(last["at"]), "ok": last.get("ok"), "result": last.get("result") or last.get("error"),
-                             "ms": last.get("ms")} if last else None})
+                    "last": run_view(name, last) if last else None})
     return out
+
+
+def run_view(name: str, row: dict) -> dict:
+    """One job_runs row as the admin sees it: a sentence (`summary`) plus the raw result for the details view."""
+    from util import iso
+    from .summaries import describe
+    return {"at": iso(row.get("at")), "ok": row.get("ok"), "summary": describe(name, row.get("result"), row.get("error")),
+            "result": row.get("result") or row.get("error"), "ms": row.get("ms")}

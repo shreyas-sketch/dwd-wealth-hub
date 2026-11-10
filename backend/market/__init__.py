@@ -1,7 +1,11 @@
 """Crypto market data behind one interface (live public APIs or a deterministic fake).
 
-Live sources (no keys needed; COINGECKO_API_KEY optional for higher limits):
-  CoinGecko v3     prices, top coins, daily history, search, contract lookup, global, trending
+Live sources:
+  Twelve Data      prices and daily price history, when TWELVE_DATA_API_KEY is set (market/twelvedata.py).
+                   MARKET_PRICE_SOURCE=coingecko|twelvedata forces one; any coin Twelve Data can't give (unknown
+                   pair, out of credits, error) is fetched from CoinGecko instead, so a page never goes blank.
+  CoinGecko v3     everything Twelve Data doesn't have: top coins by market cap, search and coin details,
+                   contract lookup, market totals, trending (and prices/history when Twelve Data is off)
   alternative.me   Fear & Greed index
   Binance / KuCoin spot symbol lists (Early Coin Radar's new-listing diff)
 
@@ -11,13 +15,18 @@ Every call is cached in-process (prices 60 s, history 6 h, lists 1 h).
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 import time
 from typing import Any, Optional
 
 from core.vendors import vendor_mode
 
+log = logging.getLogger("market")
+
 _cache: dict[str, tuple[float, Any]] = {}
 _provider = {"obj": None, "mode": None}
+_td: dict = {"obj": None, "key": None}
 
 STABLES = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE"}
 
@@ -34,6 +43,58 @@ def provider():
         _provider["mode"] = mode
         _cache.clear()
     return _provider["obj"]
+
+
+def price_source() -> str:
+    """Where prices and price history come from: "fake" (QA/tests), "twelvedata" or "coingecko"."""
+    if vendor_mode("market") == "fake":
+        return "fake"
+    key = os.environ.get("TWELVE_DATA_API_KEY", "")
+    want = (os.environ.get("MARKET_PRICE_SOURCE") or "").strip().lower()
+    if want == "coingecko":
+        return "coingecko"
+    if want == "twelvedata" and not key:
+        log.warning("MARKET_PRICE_SOURCE=twelvedata but TWELVE_DATA_API_KEY is empty; using CoinGecko")
+        return "coingecko"
+    return "twelvedata" if key else "coingecko"
+
+
+def td_provider():
+    key = os.environ.get("TWELVE_DATA_API_KEY", "")
+    if _td["obj"] is None or _td["key"] != key:
+        from .twelvedata import TwelveDataMarket
+        _td["obj"], _td["key"] = TwelveDataMarket(key), key
+    return _td["obj"]
+
+
+async def _fetch_prices(syms: list[str]) -> dict[str, dict]:
+    if price_source() != "twelvedata":
+        return await provider().prices(syms)
+    got: dict[str, dict] = {}
+    try:
+        got = await td_provider().prices(syms)
+    except Exception as e:  # noqa: BLE001 — out of credits, bad key, network: CoinGecko fills in
+        log.info("Twelve Data prices failed (%s); using CoinGecko for %s", e, ",".join(syms))
+    rest = [s for s in syms if s not in got]
+    if rest:
+        try:
+            filled = await provider().prices(rest)
+            got = {**got, **{k: {**v, "source": v.get("source") or "coingecko"} for k, v in filled.items()}}
+        except Exception:
+            if not got:
+                raise
+    return got
+
+
+async def _fetch_history(symbol: str, days: int) -> list[tuple[str, float]]:
+    if price_source() == "twelvedata":
+        try:
+            rows = await td_provider().history(symbol, days)
+            if rows:
+                return rows
+        except Exception as e:  # noqa: BLE001
+            log.info("Twelve Data history %s failed (%s); using CoinGecko", symbol, e)
+    return await provider().history(symbol, days)
 
 
 _inflight: dict[str, "asyncio.Future"] = {}
@@ -75,6 +136,7 @@ async def _cached(key: str, ttl: float, fn):
 def clear_cache() -> None:
     _cache.clear()
     _inflight.clear()
+    _td["obj"] = None
 
 
 async def top_coins(n: int = 10, exclude_stables: bool = True) -> list[dict]:
@@ -84,9 +146,44 @@ async def top_coins(n: int = 10, exclude_stables: bool = True) -> list[dict]:
     return rows[:n]
 
 
+PRICE_TTL = 60
+
+
 async def prices(symbols: list[str]) -> dict[str, dict]:
+    """Per-coin cache: each coin's quote is cached on its own key, and only the coins missing from the cache are
+    fetched, in one upstream call (single-flight per missing set). Before, every distinct combination of coins
+    (a member's plan, a basket, a watchlist…) was its own cache key and its own CoinGecko call. A coin the upstream
+    doesn't know is remembered as missing for the same TTL so it isn't re-requested on every page view."""
     syms = sorted({s.upper() for s in symbols if s and s.upper() not in ("USDT",)})
-    out = await _cached("px:" + ",".join(syms), 60, lambda: provider().prices(syms)) if syms else {}
+    out: dict[str, dict] = {}
+    now = time.time()
+    missing = []
+    for s in syms:
+        hit = _cache.get(f"px1:{s}")
+        if hit and now - hit[0] < PRICE_TTL:
+            if hit[1] is not None:
+                out[s] = hit[1]
+        else:
+            missing.append(s)
+    if missing:
+        try:
+            got = await _cached("px:" + ",".join(missing), PRICE_TTL, lambda: _fetch_prices(missing))
+        except Exception:
+            # upstream down / over budget: serve each coin's last known quote (up to 10× TTL), never re-stamped
+            stale = {}
+            for s in missing:
+                hit = _cache.get(f"px1:{s}")
+                if hit and hit[1] and now - hit[0] < PRICE_TTL * 10:
+                    stale[s] = hit[1]
+            if not stale and not out:
+                raise
+            out.update(stale)
+        else:
+            t = time.time()
+            for s in missing:
+                _cache[f"px1:{s}"] = (t, got.get(s))
+                if got.get(s):
+                    out[s] = got[s]
     out = dict(out)
     if any(s.upper() == "USDT" for s in symbols):
         out["USDT"] = {"symbol": "USDT", "name": "Tether", "price_usd": 1.0, "change_24h": 0.0}
@@ -100,7 +197,14 @@ async def price(symbol: str) -> Optional[float]:
 
 async def history(symbol: str, days: int) -> list[tuple[str, float]]:
     """Daily closes [(YYYY-MM-DD, usd)], oldest first."""
-    return await _cached(f"hist:{symbol.upper()}:{days}", 6 * 3600, lambda: provider().history(symbol.upper(), days))
+    return await _cached(f"hist:{symbol.upper()}:{days}", 6 * 3600, lambda: _fetch_history(symbol.upper(), days))
+
+
+async def ath_usd(symbol: str) -> Optional[float]:
+    """Highest daily close in the last ~5½ years, for sources that don't report an all-time high (Twelve Data).
+    A daily close is a little below the intraday peak, which is fine for "x% below its high"."""
+    rows = await history(symbol, 2000)
+    return max((p for _, p in rows), default=None)
 
 
 async def monthly_closes(symbol: str, years: int) -> list[tuple[str, float]]:

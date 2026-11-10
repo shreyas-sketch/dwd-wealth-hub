@@ -192,13 +192,86 @@ Also added: a test that walks every `/api/admin/*` route as logged-out (401) and
 - **Paper Money in goal progress** is now labelled "practice only, not real money".
 - **Prices** now show "+ GST" (₹2,000 + GST = ₹2,360; ₹5,000 + GST = ₹5,900). Checkout charges the GST-inclusive amount.
 
-## Found but not fixed
+## Fixed in the follow-up pass (4 Nov 2026)
 
-- **Autopilot "Run now" only buys plans whose day has come.** A brand-new plan buys first on its scheduled day.
-  - Reason: this is by design, so it was left as is. Buys and inbox alerts were checked with a due plan in a test.
-- **Admin Settings clips out-of-range numbers without saying so.** For example, 31 trial days becomes 30, and a crash level under 5 is dropped.
-- **Airdrop step ticks follow the step's position.** If the admin reorders the steps, the ticks move with them.
-- **The fake AI's debate evidence lines don't match their points.** This only affects QA mode; live mode writes its own.
-- **Admin › Jobs shows raw JSON results.** This is admin only.
-- **Logout lands on /login?next=<last page>.** Harmless.
-- **Public pages log a 401 for /auth/me in the console.** This is a network log, not a JS error. It is the normal "not logged in" check.
+Everything that was "found but not fixed" on 3 Nov, plus the problems the load test raised that code can solve.
+Tests: `backend/tests/test_followups.py` (23 tests). Backend total: 102 pass. Frontend: `CI=true yarn build` is clean
+(lint warnings would fail it). Browser check at 390px and 1280px on the QA server: public page logs no 4xx and no
+console errors, logout lands on `/login`, Settings shows field errors and saves nothing, Jobs shows sentences,
+airdrop step reorder keeps ids.
+
+**F1. Admin Settings clipped out-of-range numbers without saying so** (31 trial days → 30, crash level 3 dropped)
+- Changed: one validation table (`appsettings.SPEC`), served at `GET /admin/settings/spec`. A wrong value is
+  refused with `400 bad_setting` and `errors: {field: msg}` ("Trial days must be between 0 days and 30 days (you
+  entered 31)."). Nothing is saved if any field is wrong. Also refused now: duplicate crash levels, more than 6
+  levels, and rates that don't rise from bad to good. The form uses the same limits and marks each bad field in red.
+- Files: `appsettings.py`, `admin/routes.py`, `admin/Settings.jsx`, `components/ui.jsx` (`Field error=`).
+
+**F2. Airdrop step ticks followed the step's position**
+- Changed: the admin editor is a list of steps with move up, move down and remove, and each row keeps its step id.
+  Pasting several lines splits them into steps. The server checks ids too (`airdrops.reconcile_steps`): a sent id
+  is kept, a step without an id takes the id of an old step with the same text, otherwise it gets a new id. Ticks on
+  removed steps are deleted, and members only ever see ticks for steps that still exist.
+- Files: `features/airdrops.py`, `admin/Airdrops.jsx`.
+
+**F3. Fake AI debate evidence didn't match its points**, and the bear side could have only 2 points (this made
+`test_forecast_debate_metered` fail on some dates)
+- Changed: each rule creates a `Signal(point, evidence)` together, so a point can't be paired with another point's
+  number. There are 3 filler signals per side, so each side always has 3. A live AI reply with fewer than 3
+  `{point, evidence}` per side, or an unknown chair verdict, falls back to the rule-based debate.
+- File: `features/verdicts.py`.
+
+**F4. Admin › Jobs showed raw JSON**
+- Changed: `jobs/summaries.py` turns each job's result into one sentence ("3 plans bought, 1 failed (of 4 due).",
+  "BTC is 4.2% below its 30-day high; no crash level reached.", "Skipped: this feature is switched off"). The raw
+  values are behind "Details". An unknown job shows "key: value" pairs, never JSON.
+- Files: `jobs/summaries.py`, `jobs/registry.py`, `admin/routes.py`, `admin/Jobs.jsx`.
+
+**F5. Autopilot "Run now" only buys plans whose day has come**
+- Kept as designed (a new plan buys first on its scheduled day). The job now reports `due` and `next_due_at`, so
+  "Run now" with nothing due says "No plans were due. Next buy: 5 Nov 10:00 IST." instead of looking like it did nothing.
+- File: `crypto/dca.py`.
+
+**F6. Logout landed on /login?next=<last page>**
+- Changed: the auth context records why there is no session: `logout`, `expired` or `revoked`. Log out → `/login`.
+  Session ran out mid-use → `/login?next=<page>&reason=expired` with a notice. Account disabled → `/login?reason=revoked`
+  with a notice. Same in the admin app.
+- Files: `context/AuthContext.jsx`, `components/AppShell.jsx`, `components/AuthShell.jsx`, `pages/Login.jsx`,
+  `admin/AdminApp.jsx`, `admin/AdminLogin.jsx`.
+
+**F7. Public pages logged a 401 for /auth/me**
+- Changed: new `GET /auth/session`. It always answers 200 (`{user: null, reason}` when logged out) and renews from
+  the refresh cookie itself, so page load needs no 401 → refresh → retry round trip. `/auth/me` is unchanged.
+- Files: `auth.py`, `context/AuthContext.jsx`, `lib/api.js`.
+
+**F8. Chart Reader "busy" in the hard burst** (116 of 500, load test 3)
+- Changed: the AI queue is split into one pool per model class (fast, strong, vision), so a burst of slow chart
+  reads can't take the slots X-Ray and Ask need, and the other way round. The vision pool waits up to 45 s, because
+  the member is already watching a spinner. A full queue returns `503` with `Retry-After`. The use is refunded, and
+  the page retries twice by itself with a countdown ("Lots of people are reading charts right now. Trying again in 12s…").
+  Admin › Vendors shows each pool's running, waiting and turned-away counts, refreshed every 10 s.
+- Also: the page allowed 8 MB images but the server allows 5 MB. Both say 5 MB now.
+- Files: `llm.py`, `features/chart.py`, `features/chart_vision.py`, `admin/routes.py`, `pages/ChartReader.jsx`, `admin/Vendors.jsx`.
+
+**F9. Market data under webinar load** (CoinGecko free tier ~30 calls a minute)
+- Changed:
+  - Prices are cached per coin, and only the missing coins are fetched, in one call. Before, every different set
+    of coins (a plan, a basket, a watchlist) was its own call.
+  - Symbol → CoinGecko id lookups are cached for 24 h (1 h for misses).
+  - Each worker has its own CoinGecko budget (`COINGECKO_RATE_PER_MIN`). A 429 pauses calls for its `Retry-After`.
+    While over budget, the last good value is served and the stale value is never re-stamped as fresh.
+- Files: `market/__init__.py`, `market/live.py`, `core/http.py`.
+
+**F10. OTP and alert delivery**
+- Changed: one pooled HTTP client per worker (`core/http.shared_client`) for MSG91, AiSensy OTP, WhatsApp alerts
+  and CoinGecko, instead of a new TLS connection per call. If WhatsApp OTP fails 5 times in a row (for example
+  AiSensy's burst limit), it is skipped for 60 s and codes go straight to SMS. An explicit "Send by SMS / WhatsApp"
+  choice is always tried.
+- Files: `core/http.py`, `accounts/otp_service.py`, `accounts/otp_providers.py`, `notify/channels.py`.
+
+## Still to check live (needs real accounts, can't be tested here)
+
+- **Anthropic rate limits:** pool size × `WEB_CONCURRENCY` must fit the account. Watch "Turned away" in Admin › Vendors during the webinar.
+- **CoinGecko paid key:** set `COINGECKO_API_KEY`, `COINGECKO_BASE_URL` and `COINGECKO_RATE_PER_MIN` (for example 400).
+- **MSG91 / AiSensy burst limits:** confirm 500 codes a minute with each vendor.
+- **Harmless, left as is:** the fake AI's wording in QA mode is canned sample text.

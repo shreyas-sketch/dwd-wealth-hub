@@ -7,17 +7,20 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        bz: ["Inter", "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "sans-serif"],
-        bzmono: ['"JetBrains Mono"', "Menlo", "monospace"],
-        bzserif: ["Fraunces", '"Playfair Display"', "Georgia", "serif"],
+        // Ek Type (Mumbai) pair; both carry Devanagari for a later Hindi version.
+        bz: ["Mukta", "-apple-system", "BlinkMacSystemFont", '"Segoe UI"', "sans-serif"],      // text + UI
+        bzserif: ['"Baloo 2"', "Mukta", "system-ui", "sans-serif"],                          // display (name kept for old classes)
+        bzdisplay: ['"Baloo 2"', "Mukta", "system-ui", "sans-serif"],
+        bzmono: ['"JetBrains Mono"', "Menlo", "monospace"],                                  // admin / code only
       },
       boxShadow: {
-        bzsheet: "0 -8px 32px rgba(20,24,33,0.14)",
+        bzsheet: "0 -8px 32px rgba(27,31,74,0.16)",
         bzframe: "var(--card-shadow)",
       },
       borderRadius: {
-        bzcard: "16px",
-        bzbtn: "10px",
+        bzhero: "28px",   // the one hero panel
+        bzcard: "20px",   // groups
+        bzbtn: "12px",    // inputs, small boxes
       },
       colors: {
         bz: {
@@ -39,6 +42,12 @@ module.exports = {
           "gold-deep": "var(--bz-gold-deep)",
           "gold-tint": "var(--bz-gold-tint)",
           scrim: "var(--bz-scrim)",
+          btn: "var(--bz-btn)",
+          "on-btn": "var(--bz-on-btn)",
+          hero: "var(--bz-hero)",
+          "hero-ink": "var(--bz-hero-ink)",
+          "hero-muted": "var(--bz-hero-muted)",
+          "hero-line": "var(--bz-hero-line)",
         },
       },
     },

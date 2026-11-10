@@ -8,7 +8,7 @@ import {
   MessageCircle, Newspaper, Radar, Repeat, ScanSearch, Scale, Shield, Target, User, X,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { useAuth } from "@/context/AuthContext";
+import { loginRedirect, useAuth } from "@/context/AuthContext";
 import { ThemeToggle } from "@/context/ThemeContext";
 import { captureAttribution, track } from "@/lib/attribution";
 import { daysUntil } from "@/lib/format";
@@ -53,13 +53,13 @@ function NavItem({ item, onGo, locked, badge }) {
           {isActive && <span aria-hidden className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-bz-gold" />}
           <Icon className={`w-5 h-5 shrink-0 ${isActive ? "text-bz-gold" : "text-bz-muted"}`} strokeWidth={1.75} aria-hidden />
           <span className="min-w-0 flex-1">
-            <span className={`flex items-center gap-1.5 text-[14px] font-medium`}>
+            <span className={`flex items-center gap-1.5 text-[15px] font-semibold leading-tight`}>
               <span className={isActive ? "text-bz-ink" : "text-bz-muted"}>{label}</span>
               {locked && <Lock className="w-3 h-3 text-bz-muted" aria-label="Locked on your plan" />}
             </span>
-            <span className="block text-[12px] text-bz-muted truncate">{sub}</span>
+            <span className="block text-[13px] text-bz-muted truncate leading-snug">{sub}</span>
           </span>
-          {badge ? <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-bz-gold text-white text-[11px] font-semibold grid place-items-center">{badge}</span> : null}
+          {badge ? <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-bz-gold text-[#1b1f4a] text-[12px] font-bold grid place-items-center">{badge}</span> : null}
         </>
       )}
     </NavLink>
@@ -67,7 +67,7 @@ function NavItem({ item, onGo, locked, badge }) {
 }
 
 function GroupLabel({ children }) {
-  return <div className="px-3 pt-4 pb-1 font-bzmono text-[10.5px] uppercase tracking-[0.22em] text-bz-gold-deep">{children}</div>;
+  return <div className="px-3 pt-5 pb-1 text-[13px] font-semibold text-bz-muted">{children}</div>;
 }
 
 function MenuBody({ onGo, user, plan, unread, onLogout }) {
@@ -85,7 +85,7 @@ function MenuBody({ onGo, user, plan, unread, onLogout }) {
       </div>
       <nav aria-label="Main" className="mt-3 flex flex-col gap-0.5 overflow-y-auto no-scrollbar -mx-1 px-1 pb-2 flex-1 min-h-0">
         {NAV_MAIN.map((i) => <NavItem key={i.to} item={i} onGo={onGo} locked={locked(i)} />)}
-        <GroupLabel>₹5,000 plan</GroupLabel>
+        <GroupLabel>On the ₹5,000 plan</GroupLabel>
         {NAV_PRO.map((i) => <NavItem key={i.to} item={i} onGo={onGo} locked={locked(i)} />)}
         <GroupLabel>You</GroupLabel>
         {NAV_ACCOUNT.map((i) => <NavItem key={i.to} item={i} onGo={onGo} badge={i.key === "inbox" ? unread : 0} />)}
@@ -93,10 +93,10 @@ function MenuBody({ onGo, user, plan, unread, onLogout }) {
       </nav>
       <div className="pt-3 border-t border-bz-line flex items-center gap-3 px-2">
         <Link to="/app/account" onClick={onGo} className="flex items-center gap-3 min-w-0 flex-1 rounded-[10px] hover:bg-bz-inset -m-1 p-1">
-          <span className="w-9 h-9 shrink-0 rounded-full grid place-items-center text-[13px] font-semibold bg-bz-gold text-white">{initial}</span>
+          <span className="w-9 h-9 shrink-0 rounded-full grid place-items-center font-bzdisplay text-[16px] font-bold bg-bz-btn text-bz-on-btn">{initial}</span>
           <span className="min-w-0">
             <span className="block text-sm font-semibold truncate">{user?.name || user?.phone}</span>
-            <span className="block font-bzmono text-[10.5px] uppercase tracking-[0.16em] text-bz-muted">Profile</span>
+            <span className="block text-[13px] text-bz-muted">Profile and usage</span>
           </span>
         </Link>
         <button type="button" onClick={onLogout} title="Log out" aria-label="Log out" data-testid="logout" className="w-10 h-10 grid place-items-center text-bz-muted hover:text-bz-ink shrink-0">
@@ -107,12 +107,12 @@ function MenuBody({ onGo, user, plan, unread, onLogout }) {
   );
 }
 
-// Redirects to /login?next=… when logged out.
+// Redirects to /login when logged out (with ?next= unless the member logged out on purpose).
 export function RequireAuth({ children }) {
-  const { user, checking } = useAuth();
+  const { user, checking, signedOut } = useAuth();
   const { pathname, search } = useLocation();
   if (checking || user === null) return <div className="min-h-screen bg-bz-bg grid place-items-center"><Spinner /></div>;
-  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(pathname + search)}`} replace />;
+  if (!user) return <Navigate to={loginRedirect("/login", signedOut, pathname + search)} replace />;
   return children;
 }
 
@@ -148,7 +148,7 @@ export default function AppShell() {
             <div className="flex items-center gap-2">
               <Link to="/app/inbox" aria-label={`Inbox${unread ? `, ${unread} unread` : ""}`} className={`${iconBtn} relative`} data-testid="topbar-inbox">
                 <Bell className="w-5 h-5" strokeWidth={1.75} aria-hidden />
-                {unread > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-bz-gold text-white text-[10px] font-semibold grid place-items-center">{unread > 9 ? "9+" : unread}</span>}
+                {unread > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-bz-gold text-[#1b1f4a] text-[11px] font-bold grid place-items-center">{unread > 9 ? "9+" : unread}</span>}
               </Link>
               <ThemeToggle />
             </div>

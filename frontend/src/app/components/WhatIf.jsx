@@ -41,12 +41,12 @@ export function WhatIfResult({ r }) {
     <div className="space-y-3 rise-in" data-testid="whatif-result">
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-bzbtn border border-bz-line bg-bz-inset px-3.5 py-3">
-          <div className="font-bzmono text-[10.5px] uppercase tracking-[0.16em] text-bz-muted">You put in</div>
-          <div className="text-[22px] sm:text-[26px] font-semibold tabular mt-1">{inr(r.invested_inr)}</div>
+          <div className="text-[14px] text-bz-muted">You put in</div>
+          <div className="font-bzdisplay text-[25px] sm:text-[31px] font-bold leading-tight tabular mt-0.5">{inr(r.invested_inr)}</div>
         </div>
         <div className={`rounded-bzbtn border px-3.5 py-3 ${up ? "border-bz-accent bg-bz-accent-tint" : "border-bz-miss bg-bz-miss-tint"}`}>
-          <div className="font-bzmono text-[10.5px] uppercase tracking-[0.16em] text-bz-muted">Worth today</div>
-          <div className={`text-[22px] sm:text-[26px] font-semibold tabular mt-1 ${up ? "text-bz-accent" : "text-bz-miss"}`}>{inr(r.value_inr)}</div>
+          <div className="text-[14px] text-bz-muted">Worth today</div>
+          <div className={`font-bzdisplay text-[25px] sm:text-[31px] font-bold leading-tight tabular mt-0.5 ${up ? "text-bz-accent" : "text-bz-miss"}`}>{inr(r.value_inr)}</div>
           <div className={`text-[13px] font-semibold ${up ? "text-bz-accent" : "text-bz-miss"}`}>{pct(r.return_pct)}</div>
         </div>
       </div>

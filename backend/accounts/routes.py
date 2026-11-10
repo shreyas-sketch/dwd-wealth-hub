@@ -125,7 +125,8 @@ async def otp_request(body: OtpRequestIn, request: Request, response: Response):
     except otp_service.OtpError as e:
         raise HTTPException(status_code=e.status, detail=e.detail)
     out = {"challenge_id": ch.challenge_id, "channel": ch.channel, "sent_to": mask(phone),
-           "expires_in": ch.expires_in, "resend_in": ch.resend_in, "fell_back": ch.fell_back, "is_new": is_new}
+           "expires_in": ch.expires_in, "resend_in": ch.resend_in, "fell_back": ch.fell_back, "is_new": is_new,
+           "can_sms": senders.sms is not None}
     if settings.qa_mode and not settings.is_production:
         for s in (senders.sms, senders.whatsapp):
             if isinstance(s, ConsoleSender) and s.sent and s.sent[-1][0] == phone:

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { captureAttribution } from "@/lib/attribution";
-import AuthShell from "../components/AuthShell";
+import AuthShell, { ReasonNotice } from "../components/AuthShell";
 import OtpLogin from "../components/OtpLogin";
 
 function safeNext(n) {
@@ -30,6 +30,7 @@ export default function Login() {
       title={code ? "Enter the code." : "Log in with your mobile number."}
       subtitle={code ? `Sent by ${step.ch?.channel === "whatsapp" ? "WhatsApp" : "SMS"} to ${step.ch?.sent_to || "your number"}.` : "We'll send a 6-digit code. New numbers get a free account."}
       footer={legal}
+      notice={code ? null : <ReasonNotice search={loc.search} />}
     >
       <OtpLogin onStep={(s, ch) => setStep({ s, ch })} onDone={() => nav(next, { replace: true })} />
     </AuthShell>

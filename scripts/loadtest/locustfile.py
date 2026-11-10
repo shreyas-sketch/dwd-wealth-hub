@@ -102,7 +102,7 @@ class WebinarVisitor(Base):
         phone = f"+918{self.n % 1_000_000_000:09d}"
         if not self.login(phone, f"Visitor {self.n}"):
             raise StopUser()
-        self.get("/api/auth/me")
+        self.get("/api/auth/session")
         self.get("/api/verdicts/today")
         self.get("/api/pulse")
         self.get("/api/inbox")
@@ -129,11 +129,11 @@ class Member(Base):
         self.phone = f"+9170{i:08d}"
         if not self.login(self.phone):
             raise StopUser()
-        self.get("/api/auth/me")
+        self.get("/api/auth/session")
 
     @task(6)
     def today(self):
-        self.get("/api/auth/me")
+        self.get("/api/auth/session")
         self.get("/api/pulse")
         self.get("/api/verdicts/today")
         self.get("/api/ask/coach")

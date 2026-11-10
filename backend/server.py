@@ -106,6 +106,8 @@ def create_app(db=None, *, start_jobs: bool | None = None, seed: bool | None = N
         s = getattr(app.state, "scheduler", None)
         if s:
             s.shutdown(wait=False)
+        from core.http import aclose_all
+        await aclose_all()
 
     if serve_spa:
         from core.spa import mount_spa

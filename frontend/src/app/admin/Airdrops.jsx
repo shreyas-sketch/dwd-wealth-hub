@@ -1,10 +1,66 @@
-// Admin › Airdrops: table + add/edit sheet + delete. Steps are one per line.
+// Admin › Airdrops: table + add/edit sheet + delete.
+//
+// Steps are edited as a list of rows, and each row carries its step id, so moving, inserting or deleting a step
+// keeps members' ticks on the right step (QA 3 Nov: ids used to be assigned by line position). New rows have no id;
+// the server assigns one. Pasting several lines into a step splits them into separate steps.
+import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { hdate } from "@/lib/format";
-import { Chip, Field, Input, Select } from "../components/ui";
+import { Button, Chip, Field, Input, Select } from "../components/ui";
 import { XrayChip } from "../components/common";
 import { CrudPage, textareaCls } from "./shared";
 
-const blank = { name: "", coin: "", chain: "", status: "live", reward: "", deadline: "", link: "", description: "", stepsText: "" };
+let rowSeq = 0;
+const newRow = (text = "", id = null) => ({ key: `r${++rowSeq}`, id, text });
+
+const blank = { name: "", coin: "", chain: "", status: "live", reward: "", deadline: "", link: "", description: "", steps: [] };
+
+function StepsEditor({ rows, onChange }) {
+  const update = (i, patch) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const move = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= rows.length) return;
+    const next = rows.slice();
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  };
+  const remove = (i) => onChange(rows.filter((_, j) => j !== i));
+  const onPaste = (i) => (e) => {
+    const text = e.clipboardData?.getData("text") || "";
+    const lines = text.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    if (lines.length < 2) return;
+    e.preventDefault();
+    const [first, ...rest] = lines;
+    const next = rows.slice();
+    next[i] = { ...next[i], text: first };
+    next.splice(i + 1, 0, ...rest.map((t) => newRow(t)));
+    onChange(next);
+  };
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[14px] font-semibold text-bz-muted">Steps</span>
+        <span className="text-[12px] text-bz-muted">Members' ticks stay with each step when you reorder.</span>
+      </div>
+      {rows.length === 0 && <p className="text-[13px] text-bz-muted mb-2">No steps yet.</p>}
+      <ol className="space-y-2" data-testid="airdrop-steps">
+        {rows.map((r, i) => (
+          <li key={r.key} className="flex gap-1.5 items-center">
+            <span className="w-6 text-right text-[14px] font-semibold text-bz-muted tabular shrink-0">{i + 1}.</span>
+            <Input value={r.text} onChange={(e) => update(i, { text: e.target.value })} onPaste={onPaste(i)}
+              placeholder="e.g. Create a wallet" className="flex-1 min-w-0" aria-label={`Step ${i + 1}`} data-testid={`airdrop-step-${i}`} />
+            <button type="button" aria-label={`Move step ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}
+              className="w-9 h-11 grid place-items-center rounded-bzbtn hover:bg-bz-inset disabled:opacity-30" data-testid={`airdrop-step-up-${i}`}><ArrowUp className="w-4 h-4" aria-hidden /></button>
+            <button type="button" aria-label={`Move step ${i + 1} down`} disabled={i === rows.length - 1} onClick={() => move(i, 1)}
+              className="w-9 h-11 grid place-items-center rounded-bzbtn hover:bg-bz-inset disabled:opacity-30"><ArrowDown className="w-4 h-4" aria-hidden /></button>
+            <button type="button" aria-label={`Remove step ${i + 1}`} onClick={() => remove(i)}
+              className="w-9 h-11 grid place-items-center rounded-bzbtn hover:bg-bz-miss-tint text-bz-miss"><X className="w-4 h-4" aria-hidden /></button>
+          </li>
+        ))}
+      </ol>
+      <Button variant="small" className="mt-2" onClick={() => onChange([...rows, newRow()])} data-testid="airdrop-add-step"><Plus className="w-3.5 h-3.5" aria-hidden /> Add step</Button>
+    </div>
+  );
+}
 
 function Form({ value: v, onChange }) {
   const set = (k) => (e) => onChange({ ...v, [k]: e.target.value });
@@ -20,7 +76,7 @@ function Form({ value: v, onChange }) {
       <Field label="Reward"><Input value={v.reward} onChange={set("reward")} placeholder="e.g. Up to 500 XYZ tokens" /></Field>
       <Field label="Link" hint="The official airdrop page. It is X-Rayed when you save."><Input type="url" value={v.link} onChange={set("link")} placeholder="https://" /></Field>
       <Field label="Description"><textarea className={textareaCls} rows={3} value={v.description} onChange={set("description")} /></Field>
-      <Field label="Steps (one per line)"><textarea className={textareaCls} rows={5} value={v.stepsText} onChange={set("stepsText")} placeholder={"Create a wallet\nBridge a small amount\nMake one swap"} /></Field>
+      <StepsEditor rows={v.steps} onChange={(steps) => onChange({ ...v, steps })} />
     </div>
   );
 }
@@ -28,15 +84,17 @@ function Form({ value: v, onChange }) {
 export default function AdminAirdrops() {
   return (
     <CrudPage path="airdrops" title="airdrop" blank={blank} Form={Form} empty="No airdrops yet."
-      toForm={(r) => ({ ...blank, ...r, deadline: r.deadline ? String(r.deadline).slice(0, 10) : "", stepsText: (r.steps || []).map((s) => s.text).join("\n"), _steps: r.steps || [] })}
-      toBody={(v) => {
-        const lines = v.stepsText.split("\n").map((s) => s.trim()).filter(Boolean);
-        const old = v._steps || [];
-        const steps = lines.map((text, i) => ({ id: old[i]?.id || `s${i + 1}`, text }));
-        return { name: v.name.trim(), coin: v.coin.trim(), chain: v.chain.trim(), status: v.status, reward: v.reward.trim(),
-          deadline: v.deadline || null, link: v.link.trim(), description: v.description.trim(), steps };
-      }}
-      validate={(v) => (!v.name.trim() ? "Name is required." : v.link && !/^https?:\/\//.test(v.link.trim()) ? "The link must start with http:// or https://" : "")}
+      toForm={(r) => ({ ...blank, ...r, coin: r.coin || "", chain: r.chain || "", reward: r.reward || "", link: r.link || "",
+        description: r.description || "", deadline: r.deadline ? String(r.deadline).slice(0, 10) : "",
+        steps: (r.steps || []).map((s) => newRow(s.text, s.id)) })}
+      toBody={(v) => ({
+        name: v.name.trim(), coin: v.coin.trim(), chain: v.chain.trim(), status: v.status, reward: v.reward.trim(),
+        deadline: v.deadline || null, link: v.link.trim(), description: v.description.trim(),
+        steps: v.steps.map((s) => ({ ...(s.id ? { id: s.id } : {}), text: s.text.trim() })).filter((s) => s.text),
+      })}
+      validate={(v) => (!v.name.trim() ? "Name is required."
+        : v.link && !/^https?:\/\//.test(v.link.trim()) ? "The link must start with http:// or https://"
+        : v.steps.filter((s) => s.text.trim()).length > 30 ? "Use at most 30 steps." : "")}
       cols={[
         { key: "name", label: "Name", render: (r) => <b>{r.name}</b> },
         { key: "coin", label: "Coin" },

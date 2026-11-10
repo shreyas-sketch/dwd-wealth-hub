@@ -64,6 +64,16 @@
 
 **News fetch could crash when two workers ran it together.** It no longer does.
 
+## Follow-up fixes (4 Nov)
+
+- **Chart Reader "busy" in the hard burst:** fixed with one AI pool per model class. Chart Reader (vision) has its own
+  slots and a 45 s queue wait, `503` answers carry `Retry-After`, and the page retries twice by itself. Settings:
+  `LLM_MAX_CONCURRENCY_<FAST|STRONG|VISION>` and `LLM_QUEUE_WAIT_S_<…>`. Watch live in Admin › Vendors › AI queues.
+- **CoinGecko:** prices are now cached per coin (only missing coins are fetched), id lookups are cached, and each
+  worker has a call budget (`COINGECKO_RATE_PER_MIN`). A 429 pauses calls and the last good value is served.
+- **OTP:** pooled HTTP connections to MSG91 and AiSensy. A failing WhatsApp channel is skipped for 60 s so codes go straight to SMS.
+- Re-run `scripts/loadtest/locustfile.py` (test 3) to confirm the Chart Reader number on your hardware.
+
 ## What the test can't tell you (check these live)
 
 1. **AI capacity is the real limit.** Your Anthropic account's rate limits decide how many X-Rays, Ask Deepak answers and chart reads can run at once. In a webinar, keep the AI-heavy tools (Chart Reader, Ask Deepak) to a few people at a time, or raise the Anthropic limit beforehand.

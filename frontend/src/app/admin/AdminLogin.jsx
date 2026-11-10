@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import AuthShell from "../components/AuthShell";
+import AuthShell, { ReasonNotice } from "../components/AuthShell";
 import OtpLogin from "../components/OtpLogin";
 import { Button, Field, Input, Segmented } from "../components/ui";
 
@@ -29,7 +29,7 @@ export default function AdminLogin() {
   };
 
   return (
-    <AuthShell eyebrow="Admin" title="Staff log in." subtitle="Use your staff email and password, or your admin mobile number.">
+    <AuthShell eyebrow="Admin" title="Staff log in." subtitle="Use your staff email and password, or your admin mobile number." notice={<ReasonNotice search={loc.search} />}>
       <Segmented className="mb-6" options={[{ value: "staff", label: "Email" }, { value: "otp", label: "Mobile" }]} value={mode} onChange={setMode} label="Login method" testid="admin-login-mode" />
       {mode === "staff" ? (
         <form onSubmit={submit} className="space-y-4">

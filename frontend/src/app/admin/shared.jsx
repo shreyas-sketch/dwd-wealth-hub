@@ -5,6 +5,16 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { api, apiError } from "@/lib/api";
 import { Button, Card, ErrorCard, Sheet, Skeleton } from "../components/ui";
 
+// Section heading inside an admin page (replaces <Label> caps eyebrows).
+export function AdminH({ children, right = null }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 mb-3">
+      <h2 className="font-bzdisplay text-[20px] font-bold leading-tight">{children}</h2>
+      {right}
+    </div>
+  );
+}
+
 export const dt = (v) => {
   if (!v) return "—";
   const d = new Date(v);
@@ -21,7 +31,7 @@ export function Table({ cols, rows, empty = "Nothing here yet.", onRow }) {
       <table className="min-w-full text-sm">
         <thead>
           <tr className="text-left text-bz-muted">
-            {cols.map((c) => <th key={c.key} className={`font-bzmono text-[10.5px] uppercase tracking-[0.12em] font-medium px-4 py-2 border-b border-bz-line whitespace-nowrap ${c.right ? "text-right" : ""}`}>{c.label}</th>)}
+            {cols.map((c) => <th key={c.key} scope="col" className={`text-[13px] font-semibold px-4 py-2.5 border-b-2 border-bz-line-strong whitespace-nowrap ${c.right ? "text-right" : ""}`}>{c.label}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -37,13 +47,19 @@ export function Table({ cols, rows, empty = "Nothing here yet.", onRow }) {
   );
 }
 
+// Numbers sit in one surface split by 1px hairlines (the gap shows the line colour), not a card per number.
+//   <KpiGrid cols="grid-cols-2 md:grid-cols-4"><Kpi …/>…</KpiGrid>
+export function KpiGrid({ cols = "grid-cols-2 md:grid-cols-4", children }) {
+  return <div className={`grid ${cols} gap-px bg-bz-line border border-bz-line rounded-bzcard overflow-hidden`}>{children}</div>;
+}
+
 export function Kpi({ label, value, sub, tone }) {
   return (
-    <Card className="p-4 min-w-0">
-      <div className="font-bzmono text-[10.5px] uppercase tracking-[0.14em] text-bz-muted truncate">{label}</div>
-      <div className={`text-[24px] font-semibold mt-1 tabular truncate ${tone === "gold" ? "text-bz-gold-deep" : tone === "up" ? "text-bz-accent" : ""}`}>{value ?? "—"}</div>
-      {sub && <div className="text-xs text-bz-muted truncate">{sub}</div>}
-    </Card>
+    <div className="bg-bz-card px-4 py-3.5 min-w-0">
+      <div className="text-[14px] text-bz-muted truncate">{label}</div>
+      <div className={`font-bzdisplay text-[25px] font-bold leading-tight mt-0.5 tabular truncate ${tone === "gold" ? "text-bz-gold-deep" : tone === "up" ? "text-bz-accent" : ""}`}>{value ?? "—"}</div>
+      {sub && <div className="text-[13px] text-bz-muted truncate">{sub}</div>}
+    </div>
   );
 }
 

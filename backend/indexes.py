@@ -26,6 +26,8 @@ INDEXES = [
     ("events", [("user_id", 1), ("ts", -1)], {}),
     ("verdicts", [("date", -1), ("rank", 1)], {}),
     ("verdicts", [("symbol", 1), ("date", -1)], {}),
+    ("verdict_outcomes", [("horizon", 1), ("date", -1)], {}),
+    ("verdict_outcomes", [("date", -1)], {}),
     ("inbox", [("user_id", 1), ("at", -1)], {}),
     ("subscriptions", [("user_id", 1), ("status", 1)], {}),
     ("plan_grants", [("user_id", 1)], {}),

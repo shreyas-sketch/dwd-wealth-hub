@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import uuid
@@ -22,10 +23,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal, Optional
 
+from core.http import CircuitBreaker
 from growth import events
 from growth.clock import as_utc, utcnow
 
 from .otp_providers import Senders, SendResult
+from .phone import mask
+
+log = logging.getLogger("accounts.otp")
 
 OTP_LEN = 6
 TTL_MIN = 10
@@ -37,6 +42,9 @@ MAX_PER_PHONE_DAY = 10
 # let only 30 of 500 people behind one IP sign up. The per-phone limits below are the real protection.
 MAX_PER_IP_HOUR = int(os.environ.get("OTP_MAX_PER_IP_HOUR", "1000") or 1000)
 MAX_ATTEMPTS = 5
+# Sends that failed (provider refused, network) don't use up the member's code allowance above; they have their own
+# brake so a broken template can't be retried against the provider without end.
+MAX_FAILED_PER_PHONE_HOUR = 10
 
 Channel = Literal["auto", "sms", "whatsapp"]
 
@@ -88,35 +96,66 @@ def new_code() -> str:
 
 
 async def _check_limits(db, phone: str, ip: str, now: datetime) -> None:
-    last = await db.otp_challenges.find_one({"phone": phone}, sort=[("created_at", -1)])
+    """Per-phone limits count only codes that were actually delivered: a failed send (e.g. a misconfigured WhatsApp
+    template) must not lock the member out before they ever receive a code."""
+    sent = {"phone": phone, "send_ok": True}
+    last = await db.otp_challenges.find_one(sent, sort=[("created_at", -1)])
     if last:
         wait = RESEND_COOLDOWN_S - int((now - as_utc(last["created_at"])).total_seconds())
         if wait > 0:
             raise OtpError("resend_cooldown", f"Wait {wait}s before asking for a new code.", 429,
                            retry_in=wait)
     hour, day = now - timedelta(hours=1), now - timedelta(days=1)
-    if await db.otp_challenges.count_documents({"phone": phone, "created_at": {"$gte": hour}}) >= MAX_PER_PHONE_HOUR:
+    if await db.otp_challenges.count_documents({**sent, "created_at": {"$gte": hour}}) >= MAX_PER_PHONE_HOUR:
         raise OtpError("phone_hourly_limit", "Too many codes requested. Try again in an hour.", 429)
-    if await db.otp_challenges.count_documents({"phone": phone, "created_at": {"$gte": day}}) >= MAX_PER_PHONE_DAY:
+    if await db.otp_challenges.count_documents({**sent, "created_at": {"$gte": day}}) >= MAX_PER_PHONE_DAY:
         raise OtpError("phone_daily_limit", "Too many codes today. Try again tomorrow.", 429)
+    failed = {"phone": phone, "send_ok": False, "created_at": {"$gte": hour}}
+    if await db.otp_challenges.count_documents(failed) >= MAX_FAILED_PER_PHONE_HOUR:
+        raise OtpError("send_failures", "We couldn't send codes to this number several times. Try again in an hour.", 429)
     if ip and await db.otp_challenges.count_documents({"ip": ip, "created_at": {"$gte": hour}}) >= MAX_PER_IP_HOUR:
         raise OtpError("ip_limit", "Too many requests from this network. Try again later.", 429)
+
+
+# Per worker, per channel. If WhatsApp (AiSensy) fails several times in a row, e.g. its burst limit during the
+# webinar QR moment, new codes go straight to SMS for a minute instead of every person waiting for WhatsApp to
+# fail first. A channel the member picked explicitly ("Send by SMS instead") is always tried.
+BREAKERS: dict[str, CircuitBreaker] = {
+    "whatsapp": CircuitBreaker(threshold=int(os.environ.get("OTP_BREAKER_FAILURES", "5") or 5),
+                               cool_s=float(os.environ.get("OTP_BREAKER_COOL_S", "60") or 60), name="otp:whatsapp"),
+    "sms": CircuitBreaker(threshold=int(os.environ.get("OTP_BREAKER_FAILURES", "5") or 5),
+                          cool_s=float(os.environ.get("OTP_BREAKER_COOL_S", "60") or 60), name="otp:sms"),
+}
 
 
 async def _deliver(senders: Senders, phone: str, code: str, channel: Channel) -> tuple[SendResult, bool]:
     """Returns (result, fell_back)."""
     if channel == "whatsapp" and senders.whatsapp is None:
         channel = "sms"
+    if channel == "sms" and senders.sms is None:           # WhatsApp-only setup: an SMS request goes by WhatsApp
+        channel = "whatsapp" if senders.whatsapp is not None else channel
     order = [senders.sms] if channel == "sms" else [senders.whatsapp, senders.sms]
     order = [s for s in order if s is not None]
     if not order:
         return SendResult(False, "none", "none", error="no OTP provider configured"), False
+    if channel == "auto" and len(order) > 1:
+        # skip channels whose breaker is open, but never skip all of them
+        healthy = [s for s in order if not BREAKERS.get(s.channel, CircuitBreaker()).open]
+        if healthy and healthy != order:
+            return await _try(healthy, phone, code, fell_back_from_start=True)
+    return await _try(order, phone, code)
+
+
+async def _try(order: list, phone: str, code: str, fell_back_from_start: bool = False) -> tuple[SendResult, bool]:
     first: Optional[SendResult] = None
     for i, sender in enumerate(order):
         res = await sender.send(phone, code, TTL_MIN)
+        br = BREAKERS.get(sender.channel)
+        if br and getattr(sender, "name", "") != "console":
+            br.success() if res.ok else br.failure()
         first = first or res
         if res.ok:
-            return res, i > 0
+            return res, fell_back_from_start or i > 0
     return first, False
 
 
@@ -143,10 +182,13 @@ async def request_otp(
         "superseded": False, "ip": ip, "created_at": now,
         "expires_at": now + timedelta(minutes=TTL_MIN), "purge_at": now + timedelta(days=1)})
     if not res.ok:
+        # The provider's reason goes to the server log (Railway › Logs), never to the member's screen.
+        log.warning("OTP send failed for %s via %s/%s: %s", mask(phone), res.provider, res.channel, (res.error or "")[:300])
         await events.track(db, "otp_failed", anon_id=anon_id,
                            props={"reason": "send_failed", "provider": res.provider,
                                   "error": (res.error or "")[:120]})
-        raise OtpError("send_failed", "We couldn't send the code. Try SMS or try again.", 502)
+        raise OtpError("send_failed", "We couldn't send the code. Try SMS or try again." if senders.sms is not None
+                       else "We couldn't send the code on WhatsApp. Check the number uses WhatsApp, then try again.", 502)
     await events.track(db, "otp_requested", anon_id=anon_id, props={
         "channel": res.channel, "provider": res.provider, "fell_back": fell_back})
     return Challenge(challenge_id, res.channel, TTL_MIN * 60, RESEND_COOLDOWN_S, fell_back)

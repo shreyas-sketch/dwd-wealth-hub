@@ -11,7 +11,9 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-import httpx
+import httpx  # noqa: F401  (type hints / injected test clients)
+
+from core.http import shared_client
 
 log = logging.getLogger("notify.channels")
 AISENSY_URL = "https://backend.aisensy.com/campaign/t1/api/v2"
@@ -52,18 +54,14 @@ class AiSensyWhatsApp:
             "buttons": [{"type": "button", "sub_type": "url", "index": 0,
                          "parameters": [{"type": "text", "text": (row.get("link") or "/app").lstrip("/")}]}],
         }
-        client = self._client or httpx.AsyncClient(timeout=15)
         try:
-            r = await client.post(AISENSY_URL, json=payload)
+            r = await (self._client or shared_client()).post(AISENSY_URL, json=payload, timeout=15)
             body = r.json() if r.content else {}
             if r.status_code == 200 and (body.get("success") in (True, "true") or "submitted_message_id" in body):
                 return Sent(True, ref=str(body.get("submitted_message_id") or ""))
             return Sent(False, error=f"HTTP {r.status_code}: {str(body)[:200]}")
         except Exception as e:  # noqa: BLE001
             return Sent(False, error=f"{type(e).__name__}: {e}")
-        finally:
-            if self._client is None:
-                await client.aclose()
 
 
 class FakeChannel:

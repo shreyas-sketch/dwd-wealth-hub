@@ -1,5 +1,5 @@
-// Small primitives in Bullzeye's look: 16px cards, JetBrains Mono labels and buttons,
-// Fraunces headlines with one accented phrase, light + dark through the --bz-* tokens.
+// Small primitives in the Coinzeye look ("saffron on neel"): Mukta for text and UI, Baloo 2 for display,
+// sentence-case labels (no mono caps), indigo pill buttons, light + dark through the --bz-* tokens.
 import { Link } from "react-router-dom";
 import { AlertTriangle, Loader2, RotateCw } from "lucide-react";
 import { apiError } from "@/lib/api";
@@ -15,33 +15,26 @@ export function Card({ className = "", inset = false, children, ...rest }) {
   );
 }
 
+// A group heading: a plain sentence-case line, not a tracked-out caps eyebrow.
 export function Label({ children, className = "", tone = "muted", as: As = "div" }) {
   const color = { muted: "text-bz-muted", bull: "text-bz-accent", bear: "text-bz-miss", gold: "text-bz-gold-deep" }[tone];
-  return <As className={`font-bzmono text-[11px] uppercase tracking-[0.2em] ${color} mb-2.5 ${className}`}>{children}</As>;
+  return <As className={`text-[14px] font-semibold leading-tight ${color} mb-2.5 ${className}`}>{children}</As>;
 }
 
-// Mono eyebrow with a square dot, Fraunces headline with one accented phrase.
+// Page title in Baloo 2. `eyebrow` (string or [a, b]) becomes a quiet section name; `accent` continues the
+// title in the same colour (no single highlighted word).
 //   <PageHeader eyebrow={["Coin", "_X-Ray"]} title="Is it safe," accent="or a scam?" />
-export function PageHeader({ eyebrow, title, accent, accentTone = "bull", sub, right = null }) {
-  const [lead, rest] = Array.isArray(eyebrow) ? eyebrow : [eyebrow, ""];
-  const tone = accentTone === "gold" ? "text-bz-gold" : "text-bz-accent";
+export function PageHeader({ eyebrow, title, accent, sub, right = null }) {
+  const name = Array.isArray(eyebrow) ? eyebrow.join("").replace(/_/g, " ").replace(/\s+/g, " ").trim() : eyebrow;
   return (
     <header className="mb-6 md:mb-8">
       <div className="flex items-center justify-between gap-4">
-        {eyebrow ? (
-          <div className="flex items-center gap-3">
-            <span className="w-2.5 h-2.5 rounded-[3px] bg-bz-gold" aria-hidden />
-            <span className="font-bzmono text-[11px] tracking-[0.28em] uppercase">
-              <span className="text-bz-gold-deep">{lead}</span>
-              <span className="text-bz-muted">{rest}</span>
-            </span>
-          </div>
-        ) : <span />}
+        {name ? <span className="text-[15px] font-semibold text-bz-gold-deep">{name}</span> : <span />}
         {right}
       </div>
       {title ? (
-        <h1 className="font-bzserif mt-5 text-[32px] sm:text-[42px] lg:text-[48px] font-semibold leading-[1.06] tracking-[-0.01em]">
-          {title}{accent ? <> <span className={tone}>{accent}</span></> : null}
+        <h1 className="font-bzdisplay mt-2 text-[31px] sm:text-[39px] lg:text-[44px] font-bold leading-[1.08] tracking-[-0.01em] max-w-[22ch]">
+          {title}{accent ? <> {accent}</> : null}
         </h1>
       ) : null}
       {sub ? <p className="mt-3 text-[16px] leading-relaxed text-bz-muted max-w-[640px]">{sub}</p> : null}
@@ -50,15 +43,15 @@ export function PageHeader({ eyebrow, title, accent, accentTone = "bull", sub, r
 }
 
 const BTN_BASE =
-  "inline-flex items-center justify-center gap-2 rounded-bzbtn transition-colors disabled:opacity-60 disabled:cursor-not-allowed select-none";
-const BTN_BOXED = "min-h-[48px] px-5 py-3 border font-bzmono text-[12px] uppercase tracking-[0.16em] text-center";
+  "inline-flex items-center justify-center gap-2 rounded-full transition-colors disabled:opacity-60 disabled:cursor-not-allowed select-none";
+const BTN_BOXED = "min-h-[48px] px-6 py-2.5 border text-[16px] font-semibold leading-none text-center";
 const BTN_STYLES = {
-  primary: `${BTN_BOXED} bg-bz-accent text-bz-on-accent border-bz-accent hover:opacity-90`,
+  primary: `${BTN_BOXED} bg-bz-btn text-bz-on-btn border-bz-btn hover:opacity-90`,
   secondary: `${BTN_BOXED} bg-transparent text-bz-ink border-bz-line-strong hover:bg-bz-inset`,
   quiet: `${BTN_BOXED} bg-bz-inset text-bz-ink border-bz-line hover:border-bz-line-strong`,
   danger: `${BTN_BOXED} bg-transparent text-bz-miss border-bz-miss hover:bg-bz-miss-tint`,
-  gold: `${BTN_BOXED} bg-bz-gold text-white border-bz-gold hover:opacity-90`,
-  small: "min-h-[36px] px-3 py-1.5 border border-bz-line bg-bz-card font-bzmono text-[11px] uppercase tracking-[0.14em] hover:bg-bz-inset",
+  gold: `${BTN_BOXED} bg-bz-gold text-bz-ink border-bz-gold hover:opacity-90`,
+  small: "min-h-[36px] px-3.5 py-1.5 border border-bz-line-strong bg-bz-card text-[14px] font-semibold hover:bg-bz-inset",
   link: "bg-transparent text-bz-accent font-semibold text-[15px] px-0 py-1",
 };
 
@@ -155,11 +148,11 @@ const CHIP_TONES = {
   miss: "bg-bz-miss-tint text-bz-miss",
   bear: "bg-bz-miss-tint text-bz-miss",
   gold: "bg-bz-gold-tint text-bz-gold-deep",
-  solid: "bg-bz-gold text-white",
+  solid: "bg-bz-gold text-[#1b1f4a]",
 };
 export function Chip({ tone = "muted", children, className = "" }) {
   return (
-    <span className={`inline-flex items-center gap-1 font-bzmono text-[11px] uppercase tracking-[0.08em] px-2 py-0.5 rounded-md whitespace-nowrap ${CHIP_TONES[tone] || CHIP_TONES.muted} ${className}`}>
+    <span className={`inline-flex items-center gap-1 text-[13px] font-semibold leading-5 px-2.5 py-0.5 rounded-full whitespace-nowrap ${CHIP_TONES[tone] || CHIP_TONES.muted} ${className}`}>
       {children}
     </span>
   );
@@ -203,12 +196,14 @@ export const inputCls =
   "w-full min-h-[48px] rounded-bzbtn border border-bz-line-strong bg-bz-card text-bz-ink px-3.5 py-2.5 text-[16px] " +
   "placeholder:text-bz-muted outline-none focus:border-bz-accent";
 
-export function Field({ label, hint, children, className = "" }) {
+// `error`: a field-level message shown under the input (replaces the hint while present).
+export function Field({ label, hint, error, children, className = "" }) {
   return (
     <label className={`block ${className}`}>
-      <span className="block font-bzmono text-[11px] uppercase tracking-[0.16em] text-bz-muted mb-1.5">{label}</span>
+      <span className="block text-[14px] font-semibold text-bz-muted mb-1.5">{label}</span>
       {children}
-      {hint && <span className="block text-[12px] text-bz-muted mt-1">{hint}</span>}
+      {error ? <span className="block text-[12px] text-bz-miss mt-1" role="alert">{error}</span>
+        : hint && <span className="block text-[12px] text-bz-muted mt-1">{hint}</span>}
     </label>
   );
 }
@@ -245,7 +240,7 @@ export function Segmented({ options, value, onChange, label, testid, className =
         return (
           <button key={String(v)} type="button" onClick={() => onChange(v)} aria-pressed={on}
             data-testid={testid ? `${testid}-${v}` : undefined}
-            className={`flex-1 min-h-[44px] px-2 rounded-bzbtn font-bzmono text-[12px] tracking-[0.1em] uppercase border ${on ? "bg-bz-ink text-bz-bg border-bz-ink" : "bg-bz-inset text-bz-ink border-bz-line hover:border-bz-line-strong"}`}>
+            className={`flex-1 min-h-[44px] px-2 rounded-bzbtn text-[15px] font-semibold border ${on ? "bg-bz-btn text-bz-on-btn border-bz-btn" : "bg-bz-card text-bz-ink border-bz-line-strong hover:bg-bz-inset"}`}>
             {l}
           </button>
         );
@@ -269,7 +264,7 @@ export function Stat({ label, value, sub, tone }) {
   const c = tone === "up" ? "text-bz-accent" : tone === "down" ? "text-bz-miss" : "";
   return (
     <div className="rounded-bzbtn border border-bz-line bg-bz-card px-3.5 py-3 min-w-0">
-      <div className="font-bzmono text-[10.5px] uppercase tracking-[0.16em] text-bz-muted truncate">{label}</div>
+      <div className="text-[13px] font-semibold text-bz-muted truncate">{label}</div>
       <div className={`text-[20px] font-semibold mt-1 tabular truncate ${c}`}>{value}</div>
       {sub && <div className="text-[12px] text-bz-muted mt-0.5 truncate">{sub}</div>}
     </div>
