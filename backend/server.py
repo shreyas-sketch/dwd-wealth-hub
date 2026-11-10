@@ -51,6 +51,22 @@ def create_app(db=None, *, start_jobs: bool | None = None, seed: bool | None = N
         app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True,
                            allow_methods=["*"], allow_headers=["*"])
 
+    @app.middleware("http")
+    async def _security_headers(request, call_next):
+        """Browser protections on every response. frame-ancestors / X-Frame-Options stop another site embedding the
+        app invisibly to trick a member into clicking (clickjacking) — Autopilot places real buys. Razorpay's
+        checkout opens its own frame inside our page, which these don't affect."""
+        resp = await call_next(request)
+        h = resp.headers
+        h.setdefault("X-Frame-Options", "DENY")
+        h.setdefault("Content-Security-Policy", "frame-ancestors 'none'; base-uri 'self'; object-src 'none'")
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        if not settings.qa_mode:           # HTTPS only (Railway); browsers ignore it on plain http anyway
+            h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return resp
+
     api = APIRouter(prefix="/api")
     api.include_router(health_router)
     bind_health(db)

@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Lock, Wallet } from "lucide-react";
 import { api, apiError } from "@/lib/api";
-import { inr, inrShort, sdate } from "@/lib/format";
+import { inr, inrPrice, inrShort, sdate } from "@/lib/format";
 
 const Rs = ({ v }) => <><span className="sm:hidden">{inrShort(v)}</span><span className="hidden sm:inline">{inr(v)}</span></>;
 import { AXIS_TICK, C, TOOLTIP } from "../chart";
@@ -172,7 +172,7 @@ export default function PaperSection({ selectedPlan }) {
                   <tr key={x.symbol} className="border-t border-bz-line">
                     <td className="py-2.5 pr-2 font-semibold">{x.symbol}</td>
                     <td className="py-2.5 px-2 text-right hidden sm:table-cell">{Number(x.qty || 0).toLocaleString("en-IN", { maximumFractionDigits: 6 })}</td>
-                    <td className="py-2.5 px-2 text-right"><Rs v={x.avg_price_inr} /></td>
+                    <td className="py-2.5 px-2 text-right">{inrPrice(x.avg_price_inr)}</td>
                     <td className="py-2.5 px-2 text-right"><Rs v={x.value_inr} /></td>
                     <td className="py-2.5 pl-2 text-right"><Move v={x.pnl_pct} /></td>
                   </tr>

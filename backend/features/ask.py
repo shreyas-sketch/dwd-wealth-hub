@@ -146,10 +146,22 @@ class AskIn(BaseModel):
 
 SYSTEM = ("You are Ask Deepak, the study assistant for a crypto education program for Indian learners. "
           "Answer like a patient mentor: plain English, short paragraphs, concrete steps, numbers in rupees where it helps. "
-          "Use ONLY the session notes given; if they don't cover the question, say so and give the safe general principle. "
+          "Use ONLY the session notes and the app facts given; if they don't cover the question, say so and give the safe "
+          "general principle. "
           "Never tell this person which coin to buy or sell, never give price predictions or targets, never promise returns. "
           "For 'should I buy X' questions, explain how to judge it themselves (Coin X-Ray, Verdicts, position size, their plan). "
           "Remind about safety where relevant: never share a seed phrase, use trade-only API keys.")
+
+
+# Facts the rest of the app already states, so Ask never contradicts them when the session notes don't cover a topic
+# (QA 10 Nov: it said its notes "don't cover tax rules" while every page says 30% tax and 1% TDS).
+APP_FACTS = (
+    "Tax in India (as the app states it): profit on selling or swapping crypto is taxed at a flat 30% plus cess, "
+    "whatever your income slab. Only the purchase cost can be deducted, and a loss on one coin can't be set off "
+    "against a gain on another or carried forward. 1% TDS is deducted on crypto sales and transfers above the yearly "
+    "limits; it shows in Form 26AS and counts towards the tax you owe. Keep a record of every buy and sell, and check "
+    "your own case with a CA.")
+TAX_WORDS = re.compile(r"\b(tax|taxes|taxed|tds|itr|26as|cess|115bbh|194s)\b", re.I)
 
 
 def _snippet(t: str, n: int = 220) -> str:
@@ -161,6 +173,8 @@ def fake_answer(question: str, hits: list[dict], refused: bool) -> dict:
         return {"answer": ("I won't tell you which coin to buy — that has to be your call. Here's how to judge it: run it "
                            "through Coin X-Ray for red flags, check today's Verdict, and only put in an amount that fits "
                            "your plan's allocation. If a 50% fall would hurt, the amount is too big."), "refused": True}
+    if TAX_WORDS.search(question):
+        return {"answer": APP_FACTS, "refused": False}
     if not hits:
         return {"answer": ("Our sessions don't cover that exactly. The safe principle: start small, buy regularly instead "
                            "of all at once, keep coins on trusted exchanges or your own wallet, and never share your seed phrase."),
@@ -175,7 +189,8 @@ async def _answer(question: str, history: list[dict], strict: bool) -> dict:
     hits = await search(db(), question, 5)
     notes = "\n\n".join(f"[{h['title']}] {h['text']}" for h in hits)
     convo = "\n".join(f"{m['role']}: {m['text'][:400]}" for m in history[-6:])
-    prompt = (f"Earlier in this chat:\n{convo or '(none)'}\n\nSession notes:\n{notes or '(no matching notes)'}\n\n"
+    prompt = (f"Earlier in this chat:\n{convo or '(none)'}\n\nApp facts:\n{APP_FACTS}\n\n"
+              f"Session notes:\n{notes or '(no matching notes)'}\n\n"
               f"Question: {question}\n\nReturn {{\"answer\": str, \"refused\": bool}} — refused=true only if you declined "
               "to name a coin to buy/sell or predict a price.")
     try:
