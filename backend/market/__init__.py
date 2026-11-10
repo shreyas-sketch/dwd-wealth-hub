@@ -145,13 +145,16 @@ def clear_cache() -> None:
 NOT_COINS = {"WBTC", "WETH", "STETH", "WSTETH", "WEETH", "EETH", "CBBTC", "CBETH", "RETH", "METH", "BETH", "EZETH",
              "RSETH", "SFRXETH", "TBTC", "LBTC", "SOLVBTC", "BTCB", "JITOSOL", "MSOL", "BNSOL", "JUPSOL", "WBETH",
              "XAUT", "PAXG", "BUIDL", "USYC", "OUSG", "USTB", "WTRX", "WBNB", "WAVAX", "WSOL", "WHYPE"}
+# Privacy coins: several major exchanges have delisted them and Indian exchanges generally don't list them, so no
+# daily call goes to webinar beginners. (QA 10 Nov: Monero entered the top 10.) Ask counsel before removing any.
+PRIVACY_COINS = {"XMR", "ZEC", "DASH", "FIRO", "ARRR"}
 
 
 def is_plain_coin(row: dict) -> bool:
     sym = str(row.get("symbol") or "").upper()
     if not sym or not sym.isalnum():                  # FIGR_HELOC, BSC-USD, USDC.E …
         return False
-    if sym in STABLES or sym in NOT_COINS or "USD" in sym:   # USDS, USD1, PYUSD …
+    if sym in STABLES or sym in NOT_COINS or sym in PRIVACY_COINS or "USD" in sym:   # USDS, USD1, PYUSD …
         return False
     return True
 

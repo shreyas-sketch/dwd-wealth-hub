@@ -170,11 +170,12 @@ async def test_top_coins_skips_tokenised_wrapped_and_unlisted(monkeypatch):
 
     class P:
         async def top_coins(self, n):
-            syms = ["BTC", "ETH", "USDT", "FIGR_HELOC", "WBTC", "STETH", "USDS", "BSC-USD", "XRP", "PAXG", "NOTLISTED", "SOL"]
+            syms = ["BTC", "ETH", "USDT", "FIGR_HELOC", "WBTC", "STETH", "USDS", "BSC-USD", "XRP", "PAXG", "XMR", "NOTLISTED",
+                    "SOL"]
             return [{"symbol": s, "name": s, "rank": i + 1} for i, s in enumerate(syms)]
 
     async def listings(venue):
-        return ["BTC", "ETH", "XRP", "SOL", "WBTC"] if venue == "binance" else []
+        return ["BTC", "ETH", "XRP", "SOL", "WBTC", "XMR"] if venue == "binance" else []
     monkeypatch.setattr(market, "provider", lambda: P())
     monkeypatch.setattr(market, "listings", listings)
     market.clear_cache()
