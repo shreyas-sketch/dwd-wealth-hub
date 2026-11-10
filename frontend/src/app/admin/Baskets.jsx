@@ -49,7 +49,7 @@ function Form({ value: v, onChange }) {
 export default function AdminBaskets() {
   return (
     <CrudPage path="baskets" title="basket" blank={blank} Form={Form} empty="No baskets yet."
-      toForm={(r) => ({ ...blank, ...r, coins: (r.coins || []).map((c) => ({ symbol: c.symbol, weight_pct: c.weight_pct })) })}
+      toForm={(r) => ({ ...blank, ...Object.fromEntries(Object.entries(r).filter(([, x]) => x != null)), coins: (r.coins || []).map((c) => ({ symbol: c.symbol, weight_pct: c.weight_pct })) })}
       toBody={(v) => ({ name: v.name.trim(), theme: v.theme.trim(), description: v.description.trim(),
         coins: v.coins.filter((c) => c.symbol).map((c) => ({ symbol: c.symbol.trim().toUpperCase(), weight_pct: Number(c.weight_pct) || 0 })),
         min_inr: Number(v.min_inr) || 0, risk_note: v.risk_note.trim(), change_note: v.change_note.trim(), auto_rule: v.auto_rule || null })}

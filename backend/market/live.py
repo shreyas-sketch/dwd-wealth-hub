@@ -20,6 +20,9 @@ log = logging.getLogger("market.live")
 CG = os.environ.get("COINGECKO_BASE_URL", "https://api.coingecko.com/api/v3").rstrip("/")
 FNG = "https://api.alternative.me/fng/?limit=1"
 BINANCE_INFO = "https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT"
+# Binance's public market-data host. api.binance.com refuses requests from US servers (HTTP 451), which is where
+# Railway runs; this host serves the same exchangeInfo for market data only. QA 11 Nov.
+BINANCE_INFO_FALLBACK = "https://data-api.binance.vision/api/v3/exchangeInfo?permissions=SPOT"
 KUCOIN_SYMBOLS = "https://api.kucoin.com/api/v2/symbols"
 
 IDS = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "XRP": "ripple", "BNB": "binancecoin",
@@ -189,7 +192,11 @@ class LiveMarket:
 
     async def listings(self, venue: str) -> list[str]:
         if venue == "binance":
-            d = await self._get(BINANCE_INFO, headers={"accept": "application/json"})
+            try:
+                d = await self._get(BINANCE_INFO, headers={"accept": "application/json"})
+            except Exception as e:  # noqa: BLE001 — geo-blocked or down: try the market-data host
+                log.info("binance exchangeInfo failed (%s); using %s", type(e).__name__, BINANCE_INFO_FALLBACK)
+                d = await self._get(BINANCE_INFO_FALLBACK, headers={"accept": "application/json"})
             return sorted({s["baseAsset"] for s in d.get("symbols", [])
                            if s.get("quoteAsset") == "USDT" and s.get("status") == "TRADING"})
         if venue == "kucoin":
