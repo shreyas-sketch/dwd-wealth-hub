@@ -89,7 +89,10 @@ ODD_TLDS = {"xyz", "top", "click", "live", "site", "online", "shop", "icu", "buz
             "loan", "win", "bid", "rest", "gq", "tk", "ml", "cf"}
 SHORTENERS = {"bit.ly", "tinyurl.com", "t.co", "goo.gl", "cutt.ly", "rb.gy", "is.gd", "t.me", "wa.me", "chat.whatsapp.com"}
 LINK_WORDS = ("airdrop", "claim", "giveaway", "double", "bonus", "reward", "connect-wallet", "walletconnect",
-              "verify", "validate", "support", "recover", "unlock", "kyc", "free-crypto")
+              "verify", "validate", "support", "recover", "unlock", "kyc", "free-crypto", "doubler", "profit",
+              "earn", "mining", "payout", "withdraw", "wallet-sync", "presale")
+# Bump when the X-Ray rules change, so saved results (the radar) are checked again under the new rules.
+XRAY_RULES_VERSION = 2
 
 URL_RE = re.compile(r"(https?://[^\s]+|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/[^\s]*)?)", re.I)
 EVM_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
@@ -159,6 +162,9 @@ def is_meme(c: dict) -> bool:
     return "meme" in cats or (str(c.get("symbol") or "").upper() in MEME_SYMBOLS)
 
 
+UNKNOWN_SITE = "Not a crypto site we know"
+
+
 def link_flags(url: str) -> tuple[list[dict], list[str]]:
     red, green = [], []
     u = url if "://" in url else "https://" + url
@@ -190,7 +196,7 @@ def link_flags(url: str) -> tuple[list[dict], list[str]]:
                              f"{host} swaps or drops a letter to look like {BRAND_NAMES.get(b, b.title())}. "
                              "Look-alike sites steal logins and wallets.", "high", decisive=True))
         elif host and not any(f["severity"] == "high" for f in red):
-            red.append(_flag("Not a crypto site we know",
+            red.append(_flag(UNKNOWN_SITE,
                              "We only recognise the main exchanges, wallets and price sites. Check who runs this site "
                              "before you log in, pay or connect a wallet.", "low"))
     tld = host.rsplit(".", 1)[-1] if "." in host else ""
@@ -359,6 +365,8 @@ def score_of(red: list[dict], green: list[str], rank: Optional[int] = None) -> t
         s = max(s, 30)                     # a coin under 3 months old is never shown as "safe"
     if any(f["title"] == "Meme coin" for f in red):
         s = max(s, 35)                     # a meme coin is never "Looks safe", even in the top 10 (QA 10 Nov: Pepe)
+    if any(f["title"] == UNKNOWN_SITE for f in red):
+        s = max(s, 30)                     # a site we don't know is never "Looks safe" (QA 10 Nov)
     if any(f.get("decisive") for f in red):
         s = max(s, 75)                     # a site posing as a real exchange is a likely scam (QA: blnance.com)
     s = max(0, min(100, s))
@@ -372,11 +380,10 @@ def _fake_headline(kind: str, label: str, red: list[dict], coin: Optional[dict])
                 "risky": f"{name} carries real risk: {red[0]['title'].lower() if red else 'small and volatile'}.",
                 "likely_scam": f"Stay away: {red[0]['title'].lower() if red else 'too many warning signs'}."}[label]
     elif kind == "link":
-        official = not any(f["title"] == "Not a crypto site we know" for f in red)
-        head = {"safe": ("This looks like an official site. Still type the address yourself instead of clicking."
-                         if official else "No warning signs in this address, but it isn't a site we know. "
-                         "Don't log in or connect a wallet unless you're sure who runs it."),
-                "risky": "Be careful with this link — check the address letter by letter.",
+        unknown = any(f["title"] == UNKNOWN_SITE for f in red) and not any(f["severity"] != "low" for f in red)
+        head = {"safe": "This looks like an official site. Still type the address yourself instead of clicking.",
+                "risky": ("We don't know this site. Don't log in, pay or connect a wallet until you've checked who runs it."
+                          if unknown else "Be careful with this link — check the address letter by letter."),
                 "likely_scam": "Don't open this link or connect a wallet to it."}[label]
     else:
         head = {"safe": "No common scam lines here — still never send money to someone you met online.",
