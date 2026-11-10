@@ -263,6 +263,78 @@ async def _complete_json(*, task, system, prompt, fake, model, max_tokens, image
         raise LLMError(f"{type(e).__name__}: {str(e)[:160]}") from e
 
 
+def _block_dict(b) -> dict:
+    """A response content block as a plain dict. The pinned SDK (0.51) predates some server-tool block types, so
+    read every block through model_dump() (extra fields are kept) instead of relying on typed attributes."""
+    if isinstance(b, dict):
+        return b
+    if hasattr(b, "model_dump"):
+        return b.model_dump(exclude_none=True)
+    return dict(getattr(b, "__dict__", {}))
+
+
+async def research_json(*, task: str, system: str, prompt: str,
+                        fake: Callable[[], tuple[dict, list[str]]], max_searches: int = 8,
+                        max_continuations: int = 4) -> tuple[dict, list[str]]:
+    """One Claude call with the web search server tool, for scheduled jobs (no member is waiting).
+
+    Returns (parsed JSON object from the final answer, every URL the search tool actually returned). Callers must
+    only trust sources that appear in that URL list: the model's own citations are checked against it.
+    LLM_MODEL_RESEARCH (default claude-opus-5-5), LLM_RESEARCH_EFFORT (default medium), LLM_RESEARCH_TIMEOUT_S."""
+    m = mode()
+    if m == "fake":
+        return fake()
+    if m == "off":
+        raise LLMError("AI is not configured (ANTHROPIC_API_KEY).")
+    model = os.environ.get("LLM_MODEL_RESEARCH", "claude-opus-5-5")
+    effort = (os.environ.get("LLM_RESEARCH_EFFORT") or "medium").strip().lower()
+    tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": max_searches}]
+    messages: list = [{"role": "user", "content": prompt + "\n\nReply with one JSON object only."}]
+    # Server-side refusal fallback (beta) so a declined request is retried on a model the API picks.
+    # The pinned SDK predates these parameters, so they go through extra_headers / extra_body.
+    extra_body = {"fallbacks": "default", **({"output_config": {"effort": effort}} if effort in
+                                              ("low", "medium", "high", "xhigh", "max") else {})}
+    extra_headers = {"anthropic-beta": "server-side-fallback-2026-07-01"}
+    seen: list[str] = []
+    text_parts: list[str] = []
+
+    async def one():
+        return await _client().messages.create(model=model, max_tokens=16000, system=system, messages=messages,
+                                               tools=tools, extra_body=extra_body, extra_headers=extra_headers)
+    try:
+        for _ in range(max_continuations + 1):
+            resp = await asyncio.wait_for(one(), timeout=_env_num("LLM_RESEARCH_TIMEOUT_S", 300))
+            blocks = [_block_dict(b) for b in resp.content]
+            for b in blocks:
+                if b.get("type") == "web_search_tool_result" and isinstance(b.get("content"), list):
+                    seen += [r["url"] for r in b["content"] if isinstance(r, dict) and r.get("url")]
+                elif b.get("type") == "text" and b.get("text"):
+                    text_parts.append(b["text"])
+            stop = getattr(resp, "stop_reason", None)
+            if stop == "pause_turn":            # server-side search loop hit its limit: resend to resume
+                messages = [messages[0], {"role": "assistant", "content": blocks}]
+                text_parts = []
+                continue
+            if stop == "refusal":
+                raise LLMError("the model declined this request")
+            if stop == "max_tokens":
+                raise LLMError("reply cut off at max_tokens")
+            break
+        else:
+            raise LLMError("research did not finish")
+        out = _parse("".join(text_parts))
+    except LLMError as e:
+        _record(task, False, str(e))
+        log.warning("LLM task %s: %s", task, e)
+        raise
+    except Exception as e:  # noqa: BLE001 — auth, model, network, JSON
+        _record(task, False, f"{type(e).__name__}: {e}")
+        log.warning("LLM task %s failed: %s: %s", task, type(e).__name__, str(e)[:300])
+        raise LLMError(f"{type(e).__name__}: {str(e)[:160]}") from e
+    _record(task, True)
+    return out, list(dict.fromkeys(seen))
+
+
 async def complete_text(*, task: str, system: str, prompt: str, fake: Callable[[], str], model: str = "strong",
                         max_tokens: int = 4000) -> str:
     m = mode()

@@ -31,6 +31,8 @@ JOBS: dict[str, tuple[str, tuple, str]] = {
     "radar_digest": ("Early Coin Radar daily digest", ("daily", 9, 0), "features.radar:job_digest"),
     "news_fetch": ("News Decoder fetch + summaries", ("every", 120), "features.news:job_fetch"),
     "events_alerts": ("Events Calendar day-before alerts", ("daily", 18, 0), "features.calendar:job_alerts"),
+    "airdrops_auto": ("Automatic Airdrop Finder", ("daily", 7, 0), "features.airdrop_auto:job_run"),
+    "baskets_auto": ("Automatic basket refresh (first Monday)", ("weekly", 0, 8, 0), "features.baskets:job_auto_refresh"),
 }
 
 
@@ -38,6 +40,7 @@ JOBS: dict[str, tuple[str, tuple, str]] = {
 class Ctx:
     db: object
     now: datetime
+    manual: bool = False          # started from Admin › Jobs "Run now" (a job may skip its calendar rule)
 
 
 def schedule_text(s: tuple) -> str:
@@ -53,7 +56,7 @@ def _fn(path: str):
     return getattr(importlib.import_module(mod), name)
 
 
-async def run(db, name: str, now: Optional[datetime] = None) -> dict:
+async def run(db, name: str, now: Optional[datetime] = None, manual: bool = False) -> dict:
     if name not in JOBS:
         raise KeyError(name)
     now = now or utcnow()
@@ -62,7 +65,7 @@ async def run(db, name: str, now: Optional[datetime] = None) -> dict:
     from core.http import patient
     try:
         with patient(float(os.environ.get("JOB_API_WAIT_S", "90") or 90)):   # jobs may wait for API budgets
-            result = await _fn(JOBS[name][2])(Ctx(db, now))
+            result = await _fn(JOBS[name][2])(Ctx(db, now, manual))
         row.update(ok=True, result=result)
     except Exception as e:  # noqa: BLE001
         log.exception("job %s failed", name)
