@@ -1,8 +1,10 @@
 // Admin › Vendors: live / fake / off, plus the AI queues (one pool per model class) for watching a webinar.
 import { Card, Chip, Label } from "../components/ui";
-import { AdminLoadable, Table, useAdmin } from "./shared";
+import { AdminLoadable, dt, Table, useAdmin } from "./shared";
 
 const TONE = { live: "bull", fake: "gold", off: "muted" };
+const TASK = { committee: "Daily verdicts", debate: "Bull vs Bear debate", xray: "Coin X-Ray", ask: "Ask Deepak",
+  chart: "Chart Reader", news: "News summaries", news_check: "Real or hype?" };
 const POOL = { fast: "Fast (X-Ray, news)", strong: "Strong (Ask, verdicts, debate)", vision: "Vision (Chart Reader)" };
 
 export default function AdminVendors() {
@@ -34,6 +36,20 @@ export default function AdminVendors() {
                 ]} />
               </Card>
             )}
+            <Card className="px-0 sm:px-5 py-2 space-y-2" data-testid="ai-calls">
+              <div className="px-4 sm:px-0 pt-2">
+                <Label>AI calls since this worker started</Label>
+                <p className="text-[12px] text-bz-muted mt-1">When a call fails the feature shows its backup answer (e.g. rule-made verdicts). The last error says why: an "AuthenticationError" means ANTHROPIC_API_KEY is wrong, "reply cut off" means the answer was too long.</p>
+              </div>
+              {(d.ai_calls || []).length === 0
+                ? <p className="text-[14px] text-bz-muted px-4 sm:px-0 pb-2">{(d.vendors || []).find((v) => v.name === "anthropic")?.mode === "off" ? "The AI is off: ANTHROPIC_API_KEY isn't set, so every feature uses its backup answer." : "No AI calls yet on this worker."}</p>
+                : <Table rows={d.ai_calls.map((r) => ({ ...r, id: r.task }))} cols={[
+                    { key: "task", label: "Feature", render: (r) => <b>{TASK[r.task] || r.task}</b> },
+                    { key: "ok", label: "Worked", right: true },
+                    { key: "failed", label: "Failed", right: true, render: (r) => <span className={r.failed ? "text-bz-miss font-semibold" : ""}>{r.failed}</span> },
+                    { key: "last_error", label: "Last error", wrap: true, render: (r) => (r.last_error ? <span className="text-[13px] break-words">{r.last_error}{r.last_error_at ? ` (${dt(r.last_error_at)})` : ""}</span> : "—") },
+                  ]} />}
+            </Card>
           </>
         )}
       </AdminLoadable>

@@ -45,6 +45,7 @@ export default function VerdictCard({ v, wl, details = true }) {
         {v.changed_from && <Chip tone="gold">Changed from {v.changed_from}</Chip>}
       </div>
       {v.summary && <p className="text-[15px] mt-2">{v.summary}</p>}
+      {v.made_by === "rules" && <p className="text-[13px] text-bz-muted mt-1">Made by our backup rules, not the AI.</p>}
       {details && <Points bull={v.bull} bear={v.bear} chair={v.chair} />}
       <Link to={`/app/coin/${v.symbol}`} className="inline-block mt-3 text-sm font-semibold text-bz-accent">Forecast and debate</Link>
     </Card>

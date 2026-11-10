@@ -109,7 +109,7 @@ function Debate({ symbol }) {
   const d = s.data;
   const side = (title, tone, pts) => (
     <div className="rounded-bzbtn border border-bz-line bg-bz-panel px-3.5 py-3">
-      <div className={`font-bzmono text-[11px] uppercase tracking-[0.16em] ${tone}`}>{title}</div>
+      <div className={`text-[14px] font-semibold ${tone}`}>{title}</div>
       {(pts || []).length ? (
         <ul className="mt-2 space-y-2.5">
           {pts.map((p, i) => (
@@ -130,6 +130,7 @@ function Debate({ symbol }) {
       {s.status === "gate" && <div className="mt-3"><GateInline detail={s.detail} feature="debate" /></div>}
       {s.status === "done" && d && (
         <div className="mt-4 space-y-3 rise-in" data-testid="debate-result">
+          {d.made_by === "rules" && <p className="text-[14px] text-bz-muted">The AI analysts weren't available, so this debate comes from our backup rules.</p>}
           <div className="grid gap-2 sm:grid-cols-2">
             {side("The bull case", "text-bz-accent", d.bull)}
             {side("The bear case", "text-bz-miss", d.bear)}
@@ -139,7 +140,7 @@ function Debate({ symbol }) {
               <Label className="mb-1.5">The chair's call</Label>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`font-bzserif text-[26px] font-semibold leading-none ${VERDICT_TEXT[d.chair.verdict] || ""}`}>{d.chair.verdict}</span>
-                {d.chair.confidence != null && <span className="font-bzmono text-[11px] uppercase tracking-[0.14em] text-bz-muted">{d.chair.confidence}% confidence</span>}
+                {d.chair.confidence != null && <span className="text-[14px] text-bz-muted">{d.chair.confidence}% confidence</span>}
               </div>
               {d.chair.call && <p className="text-[15px] mt-2">{d.chair.call}</p>}
             </Card>
@@ -170,8 +171,8 @@ export default function CoinPage() {
       <header className="flex items-start gap-3">
         <CoinBadge symbol={symbol} size={48} />
         <div className="min-w-0 flex-1">
-          <div className="font-bzmono text-[11px] tracking-[0.24em] uppercase"><span className="text-bz-gold-deep">Crypto</span><span className="text-bz-muted">_{symbol}</span></div>
-          <h1 className="font-bzserif text-[32px] sm:text-[42px] font-semibold leading-[1.05] mt-1">{name}</h1>
+          <h1 className="font-bzdisplay text-[31px] sm:text-[39px] font-bold leading-[1.05]">{name}</h1>
+          {name !== symbol && <p className="text-[15px] font-semibold text-bz-muted">{symbol}</p>}
           {(price != null || change != null) && <p className="text-[15px] mt-1"><span className="tabular font-semibold">{usd(price)}</span> <Move v={change} className="text-[14px]" /></p>}
         </div>
         <WatchStar symbol={symbol} watched={v?.watched} wl={wl} />
@@ -189,8 +190,8 @@ export default function CoinPage() {
               {v ? (
                 <>
                   <div className="flex items-baseline gap-3 flex-wrap">
-                    <span className={`font-bzserif text-[44px] leading-none font-semibold ${VERDICT_TEXT[v.verdict] || ""}`}>{v.verdict}</span>
-                    {v.confidence != null && <span className="font-bzmono text-[12px] uppercase tracking-[0.16em] text-bz-muted">{v.confidence}% confidence</span>}
+                    <span className={`font-bzdisplay text-[44px] leading-none font-bold ${VERDICT_TEXT[v.verdict] || ""}`}>{v.verdict}</span>
+                    {v.confidence != null && <span className="text-[15px] text-bz-muted">{v.confidence}% confidence</span>}
                   </div>
                   {v.changed_from && <div className="mt-2"><Chip tone="gold">Changed from {v.changed_from}</Chip></div>}
                   {v.summary && <p className="text-[16px] mt-3">{v.summary}</p>}

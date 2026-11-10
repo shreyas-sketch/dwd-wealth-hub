@@ -13,7 +13,7 @@ from typing import Optional
 
 import httpx
 
-from core.http import RateLimited, TokenBucket, shared_client
+from core.http import RateLimited, TokenBucket, shared_client, wait_budget
 
 log = logging.getLogger("market.live")
 
@@ -71,7 +71,7 @@ class LiveMarket:
     async def _get(self, url: str, params: Optional[dict] = None, headers: Optional[dict] = None):
         is_cg = url.startswith(CG)
         if is_cg:
-            await CG_BUCKET.acquire(float(os.environ.get("COINGECKO_MAX_WAIT_S", "4") or 4))
+            await CG_BUCKET.acquire(wait_budget(float(os.environ.get("COINGECKO_MAX_WAIT_S", "4") or 4)))
         c = self._client or shared_client()
         r = await c.get(url, params=params, headers=headers or _headers(), timeout=15)
         if is_cg and r.status_code == 429:

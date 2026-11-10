@@ -5,6 +5,7 @@ import { api, apiError } from "@/lib/api";
 import { dtime, inr, sdate, usd, venueName, WEEKDAYS } from "@/lib/format";
 import { Button, Chip, Field, Segmented, Select, Stat } from "./ui";
 import { Move } from "./common";
+import { useConfirm } from "./Confirm";
 
 export const FREQ_LABEL = { weekly: "Every week", monthly: "Every month" };
 
@@ -54,6 +55,7 @@ export function VenuePicker({ venues, value, onChange }) {
 }
 
 export function DcaPlanCard({ p, basketName }) {
+  const confirm = useConfirm();
   const qc = useQueryClient();
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState("");
@@ -61,7 +63,8 @@ export function DcaPlanCard({ p, basketName }) {
     setErr(""); setBusy(kind);
     try {
       if (kind === "delete") {
-        if (!window.confirm("Stop and delete this autopilot? Coins already bought stay in your exchange.")) { setBusy(null); return; }
+        if (!(await confirm({ title: "Stop and delete this Autopilot?", danger: true, confirmLabel: "Delete Autopilot",
+          body: "No more buys will happen. Coins already bought stay in your exchange account." }))) { setBusy(null); return; }
         await api.delete(`/autopilot/plan/${p.id}`);
       } else {
         await api.post(`/autopilot/plan/${p.id}/${kind}`);

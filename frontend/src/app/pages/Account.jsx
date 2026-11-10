@@ -9,6 +9,7 @@ import { PLAN_LABEL } from "@/lib/features";
 import brand from "@/brand";
 import { Button, Card, Field, Input, Label, LinkButton, Meter, OkLine, PageHeader } from "../components/ui";
 import { PlanChip } from "../components/common";
+import { useConfirm } from "../components/Confirm";
 
 const USAGE_NAME = { xray: "Coin X-Ray checks", forecast: "Forecasts", debate: "Debates", chart: "Chart reads", ask: `Questions to ${brand.coach} AI` };
 const SOURCE = { trial: "Free trial", paid: "Paid subscription", grant: "Given by our team", free: "Free" };
@@ -48,13 +49,15 @@ function Profile() {
 
 function PlanDetails() {
   const { plan, refreshMe } = useAuth();
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const p = plan || {};
   const trialLeft = p.source === "trial" ? daysUntil(p.trial_ends_at) : null;
   const cancel = async () => {
-    if (!window.confirm("Cancel your subscription? You keep your plan until the end of the month you paid for.")) return;
+    if (!(await confirm({ title: "Cancel your subscription?", danger: true, confirmLabel: "Cancel subscription", cancelLabel: "Keep my plan",
+      body: "You keep your plan until the end of the month you paid for. After that your account moves to the free plan." }))) return;
     setErr(""); setMsg(""); setBusy(true);
     try {
       const { data } = await api.post("/billing/cancel");

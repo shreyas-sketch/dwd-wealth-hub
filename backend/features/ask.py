@@ -179,7 +179,7 @@ async def _answer(question: str, history: list[dict], strict: bool) -> dict:
               f"Question: {question}\n\nReturn {{\"answer\": str, \"refused\": bool}} — refused=true only if you declined "
               "to name a coin to buy/sell or predict a price.")
     try:
-        out = await llm.complete_json(task="ask", system=SYSTEM, prompt=prompt, model="strong", max_tokens=1200,
+        out = await llm.complete_json(task="ask", system=SYSTEM, prompt=prompt, model="strong", max_tokens=4000,
                                       fake=lambda: fake_answer(question, hits, refused))
     except llm.LLMError:
         if strict:

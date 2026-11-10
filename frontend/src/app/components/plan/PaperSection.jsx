@@ -11,6 +11,7 @@ const Rs = ({ v }) => <><span className="sm:hidden">{inrShort(v)}</span><span cl
 import { AXIS_TICK, C, TOOLTIP } from "../chart";
 import { Button, Card, Empty, ErrorCard, Field, Label, MoneyInput, Segmented, Select, Skeleton, Stat } from "../ui";
 import { Move } from "../common";
+import { useConfirm } from "../Confirm";
 
 const COINS = ["BTC", "ETH", "SOL", "XRP"];
 const lakhAxis = (v) => (Math.abs(v) >= 1e5 ? `₹${(v / 1e5).toFixed(2)} L` : `₹${Math.round(v / 1000)}K`);
@@ -81,9 +82,9 @@ function TradeForm({ paper, onPaper }) {
   return (
     <form onSubmit={trade} className="space-y-3" data-testid="paper-trade">
       <Label className="mb-0">Practice a trade</Label>
-      <Segmented options={[{ value: "buy", label: "Buy" }, { value: "sell", label: "Sell" }]} value={f.side} onChange={(v) => setF({ ...f, side: v })} label="Buy or sell" testid="paper-side" />
+      <Segmented options={[{ value: "buy", label: "Buy" }, { value: "sell", label: "Sell" }]} value={f.side} onChange={(v) => { setF({ ...f, side: v }); setOk(""); setErr(""); }} label="Buy or sell" testid="paper-side" />
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Coin"><Select value={f.symbol} onChange={(e) => setF({ ...f, symbol: e.target.value })} data-testid="paper-symbol">{symbols.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+        <Field label="Coin"><Select value={f.symbol} onChange={(e) => { setF({ ...f, symbol: e.target.value }); setOk(""); setErr(""); }} data-testid="paper-symbol">{symbols.map((s) => <option key={s}>{s}</option>)}</Select></Field>
         <Field label="Amount"><MoneyInput value={f.amount_inr} onChange={(v) => setF({ ...f, amount_inr: v })} data-testid="paper-amount" /></Field>
       </div>
       <Button type="submit" className="w-full" loading={busy} disabled={!Number(f.amount_inr)} data-testid="paper-submit">{f.side === "buy" ? "Practice buy" : "Practice sell"}</Button>
@@ -97,15 +98,21 @@ function TradeForm({ paper, onPaper }) {
 export default function PaperSection({ selectedPlan }) {
   const qc = useQueryClient();
   const q = usePaper();
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(null);
   const [err, setErr] = useState("");
   const setPaper = (d) => { qc.setQueryData(["paper"], d); qc.invalidateQueries({ queryKey: ["plans"] }); };
   const act = async (kind) => {
     setErr(""); setBusy(kind);
     try {
-      const { data } = kind === "start" ? await api.post("/paper/start", { plan_id: selectedPlan?.id }) : await api.post("/paper/reset");
+      const { data } = kind === "start" ? await api.post("/paper/start", { plan_id: selectedPlan?.id })
+        : kind === "rebalance" ? await api.post("/paper/rebalance") : await api.post("/paper/reset");
       setPaper(data);
     } catch (e) { setErr(apiError(e)); } finally { setBusy(null); }
+  };
+  const askReset = async () => {
+    if (await confirm({ title: "Start Paper Money over?", danger: true, confirmLabel: "Reset paper money",
+      body: "Your practice coins, trades and value history are cleared, and you get a fresh ₹1,00,000 of paper money." })) act("reset");
   };
 
   if (q.isLoading) return <Card><Skeleton lines={4} /></Card>;
@@ -120,8 +127,23 @@ export default function PaperSection({ selectedPlan }) {
     );
   }
   const up = Number(p.pnl_inr) >= 0;
+  const drift = p.plan_drift;
   return (
     <div className="space-y-4" data-testid="paper-section">
+      {drift && (
+        <section className="rounded-bzcard border-2 border-bz-gold bg-bz-gold-tint px-5 py-4" data-testid="paper-drift" role="status">
+          <p className="font-semibold text-[16px]">Your practice money still follows your old split.</p>
+          <p className="text-[15px] mt-1">
+            "{drift.goal_name}" is now {drift.plan_split.map((a) => `${a.pct}% ${a.symbol}`).join(", ")}
+            {drift.not_in_plan.length > 0 && <>, but Paper Money still holds {drift.not_in_plan.join(" and ")}</>}
+            {drift.missing.length > 0 && <>{drift.not_in_plan.length ? " and has no " : ", but Paper Money has no "}{drift.missing.join(" or ")}</>}.
+          </p>
+          <div className="flex flex-wrap items-center gap-3 mt-3">
+            <Button onClick={() => act("rebalance")} loading={busy === "rebalance"} data-testid="paper-rebalance">Rebalance to the new split</Button>
+            <span className="text-[13px] text-bz-muted">Sells and re-buys at today's prices. Your value history stays.</span>
+          </div>
+        </section>
+      )}
       <Card>
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
@@ -142,7 +164,7 @@ export default function PaperSection({ selectedPlan }) {
           <Label>Positions</Label>
           <div className="overflow-x-auto -mx-5 px-5">
             <table className="w-full text-[13px] sm:text-[14px] tabular sm:min-w-[420px]">
-              <thead><tr className="text-left text-bz-muted font-bzmono text-[10.5px] uppercase tracking-[0.12em]">
+              <thead><tr className="text-left text-bz-muted text-[13px]">
                 <th className="py-2 pr-2 font-medium">Coin</th><th className="py-2 px-2 font-medium text-right hidden sm:table-cell">Qty</th><th className="py-2 px-2 font-medium text-right">Avg price</th>
                 <th className="py-2 px-2 font-medium text-right">Value</th><th className="py-2 pl-2 font-medium text-right">P&amp;L</th></tr></thead>
               <tbody>
@@ -163,7 +185,7 @@ export default function PaperSection({ selectedPlan }) {
       <Card><TradeForm paper={p} onPaper={setPaper} /></Card>
       <div className="flex flex-wrap gap-2 items-center">
         {selectedPlan && p.plan_id !== selectedPlan.id && <Button variant="quiet" onClick={() => act("start")} loading={busy === "start"}>Restart on "{selectedPlan.goal_name}"</Button>}
-        <Button variant="small" onClick={() => { if (window.confirm("Start over with ₹1,00,000 of paper money?")) act("reset"); }} loading={busy === "reset"} data-testid="paper-reset">Reset paper money</Button>
+        <Button variant="small" onClick={askReset} loading={busy === "reset"} data-testid="paper-reset">Reset paper money</Button>
       </div>
       {err && <p className="text-sm text-bz-miss" role="alert">{err}</p>}
     </div>

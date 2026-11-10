@@ -44,6 +44,7 @@ EVENTS: dict[str, str] = {
     "plan_saved": "Crypto plan saved (props.risk)",
     "paper_started": "Paper Money started from a plan",
     "paper_trade": "Paper trade (props.symbol, side)",
+    "paper_rebalanced": "Paper Money rebalanced to its plan's current split",
     "airdrop_step": "Airdrop step ticked (props.airdrop)",
     "chart_read": "Chart Reader run",
     "ask_asked": "Ask Deepak question",

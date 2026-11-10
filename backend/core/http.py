@@ -17,7 +17,9 @@ Also here:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
+from contextlib import contextmanager
 import os
 import time
 from typing import Optional
@@ -49,6 +51,25 @@ async def aclose_all() -> None:
         except Exception:  # noqa: BLE001
             pass
         _clients.pop(k, None)
+
+
+# How long a call may wait for an upstream's rate budget. Page requests use each source's short default (a member is
+# waiting); scheduled jobs run inside `patient()` and wait as long as it takes, so a burst of radar X-Rays queues for
+# CoinGecko's budget instead of failing (QA 10 Nov: radar coins shown as failed checks).
+_patience: contextvars.ContextVar[float] = contextvars.ContextVar("api_patience", default=0.0)
+
+
+@contextmanager
+def patient(seconds: float):
+    token = _patience.set(seconds)
+    try:
+        yield
+    finally:
+        _patience.reset(token)
+
+
+def wait_budget(default: float) -> float:
+    return max(default, _patience.get())
 
 
 class RateLimited(RuntimeError):

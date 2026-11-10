@@ -10,6 +10,7 @@ import WeightBar from "../components/WeightBar";
 import { Button, Card, Chip, Empty, Field, Label, Loadable, MoneyInput, PageHeader, Sheet } from "../components/ui";
 import { Gate } from "../components/common";
 import { ScheduleFields, scheduleBody, VenuePicker } from "../components/Dca";
+import { useConfirm } from "../components/Confirm";
 
 function useAutopilotInfo() {
   return useQuery({ queryKey: ["autopilot"], queryFn: async () => (await api.get("/autopilot", { _silentGate: true })).data });
@@ -47,6 +48,7 @@ function PracticeSheet({ b, onClose }) {
 }
 
 function InvestSheet({ b, onClose }) {
+  const confirm = useConfirm();
   const ap = useAutopilotInfo();
   const venues = ap.data?.venues || [];
   const linked = venues.filter((v) => v.linked);
@@ -60,7 +62,8 @@ function InvestSheet({ b, onClose }) {
   const go = async () => {
     setErr(""); setShort(null);
     if (b.min_inr && Number(amount) < b.min_inr) { setErr(`The smallest amount for this basket is ${inr(b.min_inr)}.`); return; }
-    if (!window.confirm(`Buy ${inr(amount)} of ${b.name} on ${venueName(v)} now? This uses real money.`)) return;
+    if (!(await confirm({ title: `Buy ${inr(amount)} of ${b.name}?`, confirmLabel: `Buy ${inr(amount)} now`,
+      body: `This places real orders on your ${venueName(v)} account using your USDT. It can't be undone from here.` }))) return;
     setBusy(true);
     try { const { data } = await api.post(`/baskets/${b.id}/invest`, { venue: v, amount_inr: Number(amount) }); setDone(data || {}); }
     catch (e) {

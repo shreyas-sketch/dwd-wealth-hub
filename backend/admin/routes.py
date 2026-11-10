@@ -355,7 +355,7 @@ async def vendors(_: dict = Admin):
             m = f"error: {e}"
         out.append({"name": n, "mode": m})
     import llm
-    return {"vendors": out, "ai_pools": llm.pool_stats()}
+    return {"vendors": out, "ai_pools": llm.pool_stats(), "ai_calls": llm.call_stats()}
 
 
 @router.get("/jobs")

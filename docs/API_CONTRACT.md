@@ -241,7 +241,7 @@ offers: [{merchant, price, min_inr, max_inr, completion_pct, orders, payment: [s
 | GET / POST | /admin/flags | list / `{key, on: true\|false\|null}` |
 | GET / POST | /admin/settings | `{trial_days, scenario_rates: {bad, average, good}, crash_levels: [20, 30, 40], anon_xray_per_day}`. Out-of-range or non-numeric values are **rejected, never clipped**: `400 {"code": "bad_setting", "field", "msg", "errors": {field: msg}}` (fields: `trial_days`, `anon_xray_per_day`, `scenario_rates.bad\|average\|good`, `scenario_rates` (must rise bad → good), `crash_levels`); nothing is saved if any field is wrong. |
 | GET | /admin/settings/spec | `{fields: {<field>: {label, min, max, integer, unit}}, max_crash_levels}`: the limits the server checks. |
-| GET | /admin/vendors | `{vendors: [{name, mode}], ai_pools: [{pool: "fast\|strong\|vision", size, in_flight, waiting, queue_wait_s, rejected}]}` (this worker) |
+| GET | /admin/vendors | `{vendors: [{name, mode}], ai_pools: [{pool: "fast\|strong\|vision", size, in_flight, waiting, queue_wait_s, rejected}], ai_calls: [{task, ok, failed, last_error, last_error_at}]}` (this worker; `last_error` says why a feature used its backup answer) |
 | GET / POST / PUT / DELETE | /admin/airdrops[/{id}] | Airdrop fields (no done_steps). `steps: [{id?, text}]` (max 30): send back each loaded step's `id` so members' ticks stay on that step when steps are reordered; steps without an id reuse an old id with the same text or get a new one. Ticks on removed steps are dropped. |
 | GET / POST / PUT / DELETE | /admin/baskets[/{id}] | Basket fields |
 | GET / POST / PUT / DELETE | /admin/events[/{id}] | Event fields |
@@ -252,3 +252,14 @@ offers: [{merchant, price, min_inr, max_inr, completion_pct, orders, payment: [s
 | GET | /admin/verdicts/accuracy?days=90 | Hit rate of the daily verdicts (7–365 days back): `{days, since, min_calls, horizons: [{horizon_days: 7\|30, band_pct, calls, right, hit_rate_pct, range_pct: [lo, hi], avg_return_pct, enough_data, spread_pct, by_verdict: [{verdict, calls, right, hit_rate_pct, range_pct, avg_return_pct, chance_pct, edge_pts}], by_confidence: [{bucket, calls, hit_rate_pct, …}], by_coin: [{symbol, calls, hit_rate_pct, avg_return_pct, …}]}], recent: [{date, symbol, verdict, confidence, return_pct, correct, end_basis}]}`. Scoring rules: `backend/features/accuracy.py`. |
 | GET | /admin/jobs | `{items: [{name, label, schedule, last: {at, ok, summary, result, ms}}]}`. `summary` is one plain sentence ("3 plans bought, 1 failed (of 4 due)."); `result` is the raw dict for the details view. |
 | POST | /admin/jobs/{name}/run | `{ok, summary, result, ms, at}` |
+
+
+## Changes from the 10 Nov live review
+- Verdicts (`/verdicts/today`, `/verdicts/coin/{symbol}`) and `/verdicts/debate` carry `made_by: "ai" | "rules"`. "rules" means the backup
+  wording was used (no key, AI error or unusable reply); the app says so instead of calling it the AI committee.
+- Radar and airdrop X-Ray results may have `label: "unchecked"` with `score: null` when the check couldn't run; shown as
+  "Not checked yet" and retried on the next scan, never as Risky.
+- `/paper` returns `plan_drift: null | {plan_id, goal_name, plan_split: [{symbol, pct}], not_in_plan: [sym], missing: [sym]}` when the
+  linked plan's coins changed. `POST /paper/rebalance` sells everything at live prices and buys the plan's split with 90% of the value.
+- Plan scenarios: `annual_pct` is the admin's Bitcoin rate scaled by the plan's mix (ETH ×1.2, XRP ×1.4, SOL ×1.5, USDT ×0); the default bad case is −15% a year.
+- The daily top 10 for verdicts excludes stablecoins, wrapped/staked/tokenised assets and coins with no USDT pair on Binance or KuCoin.

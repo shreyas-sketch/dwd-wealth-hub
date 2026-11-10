@@ -51,7 +51,7 @@ export default function Verdicts() {
   const details = useFeature("verdict_details");
   const wl = useWatchlist();
   const q = useQuery({ queryKey: ["verdicts-today"], queryFn: async () => (await api.get("/verdicts/today")).data });
-  const header = <PageHeader eyebrow={["Crypto", "_Verdicts"]} title="Today's call on" accent="the top coins." sub="Every morning our AI committee looks at each coin and says Bullish, Neutral or Bearish, with how sure it is." />;
+  const header = <PageHeader eyebrow={["Crypto", "_Verdicts"]} title="Today's call on" accent="the top coins." sub="Every morning each of the top 10 coins gets a Bullish, Neutral or Bearish call, with how sure it is and the reasons." />;
   return (
     <Gate feature="verdicts" header={header}>
       <div className="space-y-6">
@@ -61,6 +61,11 @@ export default function Verdicts() {
             {(d) => (
               <>
                 {(d.date || d.updated_at) && <p className="text-[13px] text-bz-muted">{d.date ? hdate(d.date) : ""}{d.updated_at ? ` · updated ${ago(d.updated_at)}` : ""}</p>}
+                {(d.coins || []).length > 0 && d.coins.every((v) => v.made_by === "rules") && (
+                  <p className="rounded-bzbtn bg-bz-inset px-3.5 py-2.5 text-[14px]" data-testid="verdicts-rules-note">
+                    Today's calls come from our backup rules (price trend, momentum and 30-day change) because the AI analysis wasn't available this morning.
+                  </p>
+                )}
                 {!(d.coins || []).length ? (
                   <Empty icon={Scale} title="Today's verdicts are on their way" sub="They are ready every morning by 6 am. Check back soon." />
                 ) : (

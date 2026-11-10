@@ -57,7 +57,7 @@ async def analyze_chart(data: bytes, symbol: str = "") -> dict:
     try:
         out = await llm.complete_json(task="chart", system="You are a careful chart reader. Reply in JSON only.",
                                       prompt=PROMPT.format(symbol_hint=hint), fake=lambda: fake_read(symbol),
-                                      model="vision", max_tokens=1500, images=[(media, data)])
+                                      model="vision", max_tokens=4000, images=[(media, data)])
     except llm.AIBusy as e:
         raise ChartError("unavailable", "Lots of people are reading charts right now. Try again in a moment.",
                          retry_after=e.retry_after) from e

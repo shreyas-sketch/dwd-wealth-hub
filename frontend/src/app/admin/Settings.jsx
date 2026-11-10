@@ -71,7 +71,7 @@ function Editor({ s, spec }) {
   const F = spec.fields;
   const [f, setF] = useState({
     trial_days: s.trial_days ?? 3,
-    bad: s.scenario_rates?.bad ?? 0, average: s.scenario_rates?.average ?? 15, good: s.scenario_rates?.good ?? 35,
+    bad: s.scenario_rates?.bad ?? -15, average: s.scenario_rates?.average ?? 15, good: s.scenario_rates?.good ?? 35,
     crash: (s.crash_levels || [20, 30, 40]).join(", "),
     anon: s.anon_xray_per_day ?? 1,
   });
@@ -123,8 +123,8 @@ function Editor({ s, spec }) {
         </div>
       </Card>
       <Card className="space-y-3">
-        <Label>My Crypto Plan scenario rates (% a year)</Label>
-        <p className="text-[13px] text-bz-muted -mt-1">Shown to members as labelled assumptions, not predictions. Each from {range("scenario_rates.bad")}.</p>
+        <Label>My Crypto Plan scenario rates for Bitcoin (% a year)</Label>
+        <p className="text-[13px] text-bz-muted -mt-1">Shown to members as labelled assumptions, not predictions. Each plan scales them by its mix: Ethereum ×1.2, XRP ×1.4, Solana ×1.5, USDT doesn't grow. A bad crypto market loses money, so keep the bad case below zero. Each from {range("scenario_rates.bad")}.</p>
         <div className="grid grid-cols-3 gap-3 max-w-[520px]">
           <Field label="Bad" error={errors.bad}><Input type="number" inputMode="decimal" step="0.5" value={f.bad} onChange={set("bad")} aria-invalid={!!errors.bad} data-testid="settings-bad" /></Field>
           <Field label="Average" error={errors.average}><Input type="number" inputMode="decimal" step="0.5" value={f.average} onChange={set("average")} aria-invalid={!!errors.average} data-testid="settings-average" /></Field>

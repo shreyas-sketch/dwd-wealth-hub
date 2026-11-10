@@ -27,7 +27,7 @@ from typing import Optional
 
 import httpx
 
-from core.http import RateLimited, TokenBucket, shared_client
+from core.http import RateLimited, TokenBucket, shared_client, wait_budget
 
 log = logging.getLogger("market.twelvedata")
 
@@ -106,7 +106,7 @@ class TwelveDataMarket:
         return {"Authorization": f"apikey {self.key}", "accept": "application/json"}
 
     async def _spend(self, credits: int) -> None:
-        await BUCKET.acquire(float(os.environ.get("TWELVE_DATA_MAX_WAIT_S", "3") or 3), cost=credits)
+        await BUCKET.acquire(wait_budget(float(os.environ.get("TWELVE_DATA_MAX_WAIT_S", "3") or 3)), cost=credits)
 
     def _check(self, body, http_status: int) -> dict:
         """Raise for an account-level error (any HTTP status: Twelve Data also reports errors in the body)."""
