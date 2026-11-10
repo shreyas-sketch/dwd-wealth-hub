@@ -92,9 +92,11 @@ async def job_scan(ctx) -> dict:
             trend += 1
     except Exception:  # noqa: BLE001
         pass
-    # Retry new listings whose check couldn't run last time.
+    # Retry any coin whose check couldn't run last time (old-style failures are converted first).
+    from maintenance import fix_legacy_radar_checks
+    await fix_legacy_radar_checks(d)
     rechecked = 0
-    async for r in d.radar_items.find({"xray.label": "unchecked", "kind": "new_listing"}, {"symbol": 1}):
+    async for r in d.radar_items.find({"xray.label": "unchecked"}, {"symbol": 1}).limit(25):
         x = await _xray(r["symbol"])
         if x["label"] != "unchecked":
             await d.radar_items.update_one({"_id": r["_id"]}, {"$set": {"xray": x}})

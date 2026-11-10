@@ -244,3 +244,40 @@ def test_paper_offers_and_does_rebalance_after_plan_change(client):
     assert {x["symbol"] for x in after["positions"]} == {"BTC", "ETH"} and after["plan_drift"] is None
     assert abs(after["value_inr"] - value_before) < 1                 # same money, new split (USDT part stays cash)
     assert abs(after["cash_inr"] - value_before * 0.1 - value_before * 0.9 * 0.10) < 1
+
+
+# ---------------------------------------------------------------- after-deploy data fixes ----
+async def test_startup_data_fixes(mdb):
+    import maintenance
+    await mdb.radar_items.insert_many([
+        {"_id": "trending:cg:BTC", "symbol": "BTC", "kind": "trending",
+         "xray": {"label": "risky", "score": 50, "red_flags": ["Couldn't check right now"]}},
+        {"_id": "trending:cg:ETH", "symbol": "ETH", "kind": "trending", "xray": {"label": "safe", "score": 0, "red_flags": []}}])
+    await mdb.verdicts.insert_many([
+        {"_id": "2026-11-10:FIGR_HELOC", "date": "2026-11-10", "symbol": "FIGR_HELOC", "verdict": "Bearish",
+         "bull": [maintenance.OLD_CLAIM]},
+        {"_id": "2026-11-10:BTC", "date": "2026-11-10", "symbol": "BTC", "verdict": "Neutral",
+         "bull": ["x", maintenance.OLD_CLAIM]}])
+    await mdb.verdict_outcomes.insert_one({"_id": "2026-11-03:FIGR_HELOC:7", "symbol": "FIGR_HELOC"})
+    out = await maintenance.run_data_fixes(mdb)
+    assert out == {"fix_legacy_radar_checks": 1, "drop_non_coin_verdicts": 1, "reword_exchange_claim": 1}
+    assert (await mdb.radar_items.find_one({"_id": "trending:cg:BTC"}))["xray"]["label"] == "unchecked"
+    assert (await mdb.radar_items.find_one({"_id": "trending:cg:ETH"}))["xray"]["label"] == "safe"
+    assert await mdb.verdicts.count_documents({"symbol": "FIGR_HELOC"}) == 0
+    assert await mdb.verdict_outcomes.count_documents({}) == 0
+    assert (await mdb.verdicts.find_one({"_id": "2026-11-10:BTC"}))["bull"] == ["x", maintenance.NEW_CLAIM]
+    assert await maintenance.run_data_fixes(mdb) == {}                 # idempotent
+
+
+async def test_verdict_rerun_replaces_the_whole_days_list(mdb):
+    from features.verdicts import job_daily
+    from growth.clock import IST, utcnow
+    from jobs.registry import Ctx
+    now = utcnow()
+    day = now.astimezone(IST).date().isoformat()
+    await mdb.verdicts.insert_one({"_id": f"{day}:OLDCOIN", "date": day, "symbol": "OLDCOIN", "verdict": "Bullish",
+                                   "confidence": 59, "created_at": now})
+    r = await job_daily(Ctx(mdb, now))
+    assert r["coins"] == 10
+    assert await mdb.verdicts.count_documents({"date": day, "symbol": "OLDCOIN"}) == 0
+    assert await mdb.verdicts.count_documents({"date": day}) == 10

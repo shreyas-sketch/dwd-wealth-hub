@@ -80,6 +80,8 @@ def create_app(db=None, *, start_jobs: bool | None = None, seed: bool | None = N
         if await claim_lock(db, "_startup_seed", minutes=5):
             try:
                 await seed_admin(db)
+                from maintenance import run_data_fixes
+                await run_data_fixes(db)
                 from features.calendar import ensure_seed
                 await ensure_seed(db)
                 if do_seed:
