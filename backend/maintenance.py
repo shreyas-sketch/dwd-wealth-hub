@@ -22,7 +22,7 @@ async def fix_legacy_radar_checks(db) -> int:
 
 async def drop_non_coin_verdicts(db) -> int:
     """Remove verdicts (and their hit-rate rows) for things that were never plain coins, e.g. FIGR_HELOC, a tokenised
-    loan that entered the top 10 before the filter existed."""
+    loan that entered the top 10 before the filter existed, and privacy coins such as XMR (Monero)."""
     from market import is_plain_coin
     bad = [s for s in await db.verdicts.distinct("symbol") if not is_plain_coin({"symbol": s})]
     if not bad:

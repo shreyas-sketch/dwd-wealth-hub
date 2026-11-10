@@ -10,6 +10,7 @@ etf_flows {_id: date, date, net_usd_m, note}
 from __future__ import annotations
 
 import math
+import re
 import statistics
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -101,12 +102,84 @@ _BEAR_FILLERS = (
 )
 
 
+# ------------------------------------------------------------------ plain words ----
+# The audience is webinar beginners: no indicator names (RSI, EMA …) and no raw indicator values in anything they
+# read. The AI is given the data already in plain words and told to keep it that way; plain_words() cleans up any
+# reply (or stored verdict) that slips anyway. (QA 10 Nov: 48 reasons said "EMA20 (594.9)" or "RSI is 39.9".)
+PLAIN_RULES = ("Write for beginners who have never read a trading chart. Never name technical indicators (no RSI, EMA, "
+               "SMA, MACD or similar) and never quote their values; say '20-day average price', '50-day average price' "
+               "or 'momentum' in plain words instead. Write every price in US dollars with a $ sign, e.g. $553.80.")
+
+
+def usd(p: Optional[float]) -> str:
+    if p is None:
+        return "—"
+    p = float(p)
+    return f"${p:,.2f}" if abs(p) >= 1 else f"${p:.4g}"
+
+
+def momentum_word(r: float) -> str:
+    """Same bands as signals(): over 72 overheated, under 30 oversold, 50 the middle."""
+    return ("overheated" if r > 72 else "very weak" if r < 30 else "positive" if r >= 50 else "weak")
+
+
+def trend_gap(ind: dict) -> float:
+    return (ind["ema20"] / ind["ema50"] - 1) * 100 if ind.get("ema50") else 0.0
+
+
+def trend_evidence(ind: dict) -> str:
+    g = trend_gap(ind)
+    return f"20-day average {abs(g):.1f}% {'above' if g >= 0 else 'below'} the 50-day"
+
+
+def plain_facts(ind: dict) -> str:
+    """The indicator data in the words the reader should see."""
+    g = trend_gap(ind)
+    dd = ind["drawdown90"]
+    high = "at its 90-day high" if dd >= 0 else f"{abs(dd)}% below its 90-day high"
+    return (f"price {usd(ind['price'])}; 20-day average price is {abs(g):.1f}% {'above' if g >= 0 else 'below'} the "
+            f"50-day average price (short-term trend {'up' if g >= 0 else 'down'}); recent momentum is "
+            f"{momentum_word(ind['rsi14'])}; 7-day change "
+            f"{ind['chg7']}%; 30-day change {ind['chg30']}%; yearly volatility {ind['vol30_ann']}%; {high}")
+
+
+_NUM = r"\d[\d,]*(?:\.\d+)?"
+_PAREN_NUM = re.compile(r"\s*\(\s*\$?" + _NUM + r"\s*\)")
+_AVG = re.compile(r"\b(?:the\s+)?(?:EMA|SMA|MA)\s?-?(\d+)\b(?:\s+average)?", re.I)
+_AVG_TAIL = re.compile(r"\b(?:the\s+)?(\d+)-day\s+(?:EMA|SMA|MA|moving average)\b", re.I)
+_RSI_VAL = re.compile(r"\b(?:(?:an?|the|its)\s+)?(?:\d+-day\s+)?RSI(?:\s?\(?14\)?)?\s*(?:reading\s+)?(?:is|of|at|=|:|near|around|reads)?"
+                      r"\s*(?:around\s+|about\s+|near\s+|at\s+)?(\d+(?:\.\d+)?)\b", re.I)
+_RSI = re.compile(r"\b(?:the\s+|its\s+)?(?:\d+-day\s+)?RSI(?:\s?\(?14\)?)?\b", re.I)
+_BARE_PRICE = re.compile(r"\b(price(?:\s+(?:of|is|at|near|around))?\s+)(" + _NUM + r")(?!\d|[.,]\d|\s*%)", re.I)
+
+
+def plain_words(text):
+    """Swap indicator jargon for plain words and give bare prices a $ sign. Leaves anything else untouched."""
+    if not isinstance(text, str) or not text:
+        return text
+    t = _PAREN_NUM.sub("", text) if re.search(r"EMA|SMA|\bMA\d|average", text, re.I) else text
+    t = _AVG.sub(lambda m: f"the {m.group(1)}-day average", t)
+    t = _AVG_TAIL.sub(lambda m: f"the {m.group(1)}-day average", t)
+    t = _RSI_VAL.sub(lambda m: f"{momentum_word(float(m.group(1)))} momentum", t)
+    t = _RSI.sub("momentum", t)
+    t = _BARE_PRICE.sub(lambda m: m.group(1) + "$" + m.group(2), t)
+    t = re.sub(r"\bthe the\b", "the", t)
+    return t[:1].upper() + t[1:]
+
+
+def plain_list(items):
+    if not isinstance(items, list):
+        return items
+    return [({**i, **{k: plain_words(i.get(k)) for k in ("point", "evidence") if k in i}} if isinstance(i, dict)
+             else plain_words(i)) for i in items]
+
+
 def signals(ind: dict, rank: Optional[int] = None) -> tuple[int, list[Signal], list[Signal]]:
     """Score (−4…+3) plus bull and bear signals (3 each, most specific first)."""
     s = 0
     bull: list[Signal] = []
     bear: list[Signal] = []
-    trend_ev = f"20-day avg {ind['ema20']:.4g} vs 50-day {ind['ema50']:.4g}"
+    trend_ev = trend_evidence(ind)
     if ind["ema20"] > ind["ema50"]:
         s += 1
         bull.append(Signal("Short-term trend is above the longer trend (20-day average over 50-day).", trend_ev))
@@ -121,17 +194,17 @@ def signals(ind: dict, rank: Optional[int] = None) -> tuple[int, list[Signal], l
         s -= 1
         bear.append(Signal(f"Down {abs(ind['chg30'])}% over 30 days — sellers are in control.", chg_ev))
     r = ind["rsi14"]
-    rsi_ev = f"RSI {r}"
+    mom_ev = f"14-day momentum: {momentum_word(r)}"
     if r > 72:
         s -= 1
-        bear.append(Signal(f"RSI {r}: overheated — pullbacks are common from here.", rsi_ev))
+        bear.append(Signal("Momentum is overheated after a fast rise — pullbacks are common from here.", mom_ev))
     elif r < 30:
         s += 1
-        bull.append(Signal(f"RSI {r}: oversold — bounces often start near here.", rsi_ev))
+        bull.append(Signal("Momentum is very weak after a fast fall — bounces often start near here.", mom_ev))
     elif r >= 50:
-        bull.append(Signal(f"RSI {r}: momentum is positive but not extreme.", rsi_ev))
+        bull.append(Signal("Momentum is positive but not extreme.", mom_ev))
     else:
-        bear.append(Signal(f"RSI {r}: momentum is weak but not extreme.", rsi_ev))
+        bear.append(Signal("Momentum is weak but not extreme.", mom_ev))
     dd_ev = f"{ind['drawdown90']}% from the 90-day high"
     if ind["drawdown90"] < -25:
         bear.append(Signal(f"{abs(ind['drawdown90'])}% below its 90-day high.", dd_ev))
@@ -166,10 +239,9 @@ async def committee(sym: str, name: str, ind: dict) -> dict:
                             "Neutral": f"{name} is undecided; no strong edge either way."}[v],
                 "chair": f"{v} with {conf}% confidence. {bull[0] if v != 'Bearish' else bear[0]}"}
     sys = ("You are a crypto research committee for Indian beginners: a bull analyst, a bear analyst and a chair. "
-           "Use only the data given. Plain English, short sentences, no price targets, no 'buy'/'sell' instructions.")
-    prompt = (f"Coin: {name} ({sym}). Data (USD): price {ind['price']:.4g}, RSI14 {ind['rsi14']}, EMA20 {ind['ema20']:.4g}, "
-              f"EMA50 {ind['ema50']:.4g}, 7d {ind['chg7']}%, 30d {ind['chg30']}%, yearly volatility {ind['vol30_ann']}%, "
-              f"from 90-day high {ind['drawdown90']}%.\nReturn {{\"bull\": [3 short points], \"bear\": [3 short points], "
+           "Use only the data given. Plain English, short sentences, no price targets, no 'buy'/'sell' instructions. "
+           + PLAIN_RULES)
+    prompt = (f"Coin: {name} ({sym}). Data: {plain_facts(ind)}.\nReturn {{\"bull\": [3 short points], \"bear\": [3 short points], "
               '"verdict": "Bullish|Neutral|Bearish", "confidence": 0-100, "summary": one line, "chair": two sentences}.')
     # made_by: "ai" when the model's answer is used, "rules" when the backup wording is (no key, AI error, bad reply),
     # so the page never calls a rule-made verdict an AI committee's (QA 10 Nov).
@@ -180,6 +252,8 @@ async def committee(sym: str, name: str, ind: dict) -> dict:
             out, made_by = fake(), "rules"
     except llm.LLMError:
         out, made_by = fake(), "rules"
+    out = {**out, "bull": plain_list(out.get("bull") or []), "bear": plain_list(out.get("bear") or []),
+           "summary": plain_words(out.get("summary")), "chair": plain_words(out.get("chair"))}
     return {**out, "made_by": made_by}
 
 
@@ -236,10 +310,10 @@ def shape(v: dict, details: bool, live: Optional[dict] = None, watched: bool = F
     out = {"symbol": v["symbol"], "name": v.get("name"),
            "price_usd": smart_round((live or {}).get("price_usd") or v.get("price_usd")),
            "change_24h": r2((live or {}).get("change_24h")), "verdict": v["verdict"], "confidence": v["confidence"],
-           "changed_from": v.get("changed_from"), "summary": v.get("summary"), "watched": watched, "date": v["date"],
+           "changed_from": v.get("changed_from"), "summary": plain_words(v.get("summary")), "watched": watched, "date": v["date"],
            "bull": None, "bear": None, "chair": None, "made_by": v.get("made_by", "rules")}
     if details:
-        out.update(bull=v.get("bull"), bear=v.get("bear"), chair=v.get("chair"))
+        out.update(bull=plain_list(v.get("bull")), bear=plain_list(v.get("bear")), chair=plain_words(v.get("chair")))
     return out
 
 
@@ -398,10 +472,9 @@ async def debate_for(sym: str) -> dict:
                 "chair": {"verdict": v, "confidence": conf,
                           "call": f"On balance {v.lower()}. {'The trend supports buyers' if v == 'Bullish' else 'Wait for the trend to improve' if v == 'Bearish' else 'Neither side has a clear edge'}; size any buy so a 40% fall wouldn't hurt."}}
     sys = ("Run a debate on one crypto coin for Indian beginners: bull analyst (3 points), bear analyst (3 points), then a chair "
-           "who weighs both. Each point has short evidence from the data. Plain English. No price targets, no instructions to buy or sell.")
-    prompt = (f"{info.get('name')} ({sym}). Data: price ${ind['price']:.4g}, RSI14 {ind['rsi14']}, 7d {ind['chg7']}%, 30d {ind['chg30']}%, "
-              f"EMA20 {ind['ema20']:.4g} vs EMA50 {ind['ema50']:.4g}, yearly volatility {ind['vol30_ann']}%, "
-              f"from 90-day high {ind['drawdown90']}%, market cap rank {info.get('rank')}.\n"
+           "who weighs both. Each point has short evidence from the data. Plain English. No price targets, no instructions to buy or sell. "
+           + PLAIN_RULES)
+    prompt = (f"{info.get('name')} ({sym}). Data: {plain_facts(ind)}; market cap rank {info.get('rank')}.\n"
               'Return {"bull": [{"point", "evidence"}], "bear": [{"point", "evidence"}], "chair": {"verdict": "Bullish|Neutral|Bearish", "confidence": 0-100, "call": str}}.')
     made_by = "rules"
     try:
@@ -410,7 +483,11 @@ async def debate_for(sym: str) -> dict:
         out, made_by = (got, "ai" if llm.mode() != "fake" else "rules") if got else (fake(), "rules")
     except llm.LLMError:
         out = fake()
-    return {"symbol": sym, "bull": out.get("bull", [])[:3], "bear": out.get("bear", [])[:3], "chair": out.get("chair"),
+    chair = out.get("chair")
+    if isinstance(chair, dict):
+        chair = {**chair, "call": plain_words(chair.get("call"))}
+    return {"symbol": sym, "bull": plain_list(out.get("bull", [])[:3]), "bear": plain_list(out.get("bear", [])[:3]),
+            "chair": chair,
             "made_by": made_by, "as_of": iso(utcnow()), "disclaimer": DISCLAIMER}
 
 

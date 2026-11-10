@@ -22,13 +22,13 @@ def test_rule_signals_always_three_per_side_with_matching_evidence():
         assert len(bull) == 3 and len(bear) == 3, (ind, bull, bear)
         assert v in ("Bullish", "Neutral", "Bearish") and 50 <= conf <= 85
         for sig in bull + bear:
-            # the evidence for an RSI point is the RSI, for a 30-day point the 30-day change, …
-            if sig.point.startswith("RSI"):
-                assert sig.evidence == f"RSI {rsi}"
+            # the evidence for a momentum point is the momentum, for a 30-day point the 30-day change, …
+            if sig.point.startswith("Momentum"):
+                assert sig.evidence.startswith("14-day momentum: ")
             if "over 30 days" in sig.point:
                 assert sig.evidence == f"30-day change {chg30}%"
             if "trend" in sig.point and "average" in sig.point:
-                assert sig.evidence.startswith("20-day avg")
+                assert sig.evidence.startswith("20-day average ")
             if "90-day high" in sig.point:
                 assert "90-day high" in sig.evidence
         assert len({s.point for s in bull}) == 3 and len({s.point for s in bear}) == 3
@@ -40,8 +40,8 @@ def test_debate_endpoint_points_and_evidence_pair_up(client):
         d = client.post("/api/verdicts/debate", json={"symbol": sym}).json()
         assert len(d["bull"]) == 3 and len(d["bear"]) == 3
         for p in d["bull"] + d["bear"]:
-            if p["point"].startswith("RSI"):
-                assert p["evidence"].startswith("RSI")
+            if p["point"].startswith("Momentum"):
+                assert p["evidence"].startswith("14-day momentum")
 
 
 def test_live_debate_reply_is_validated():
