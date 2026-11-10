@@ -512,3 +512,47 @@ async def test_sms_request_goes_by_whatsapp_when_sms_is_not_set_up():
 def test_otp_request_says_whether_sms_exists(client):
     r = client.post("/api/auth/otp/request", json={"phone": "9876500123"}).json()
     assert r["can_sms"] is True                                        # QA console sender offers both
+
+
+async def test_failed_sends_do_not_use_up_the_code_allowance(mdb):
+    from accounts import otp_service
+    from accounts.otp_providers import Senders, SendResult
+    from growth.clock import utcnow
+
+    class Wa:
+        channel, name = "whatsapp", "aisensy"
+        ok = False
+
+        async def send(self, phone, code, ttl):
+            return SendResult(Wa.ok, "aisensy", "whatsapp", ref="m", error=None if Wa.ok else "HTTP 400: campaign not found")
+    s = Senders(whatsapp=Wa(), sms=None)
+    now = utcnow()
+    for _ in range(6):                                  # six failures: more than the 5-codes-an-hour allowance
+        try:
+            await otp_service.request_otp(mdb, s, "+919000000009", now=now)
+        except otp_service.OtpError as e:
+            assert e.code == "send_failed"
+    Wa.ok = True                                        # template fixed: the member can get a code straight away
+    ch = await otp_service.request_otp(mdb, s, "+919000000009", now=now)
+    assert ch.channel == "whatsapp"
+
+
+async def test_failed_sends_have_their_own_brake(mdb):
+    from accounts import otp_service
+    from accounts.otp_providers import Senders, SendResult
+    from growth.clock import utcnow
+
+    class Wa:
+        channel, name = "whatsapp", "aisensy"
+
+        async def send(self, phone, code, ttl):
+            return SendResult(False, "aisensy", "whatsapp", error="HTTP 400")
+    s = Senders(whatsapp=Wa(), sms=None)
+    now = utcnow()
+    codes = []
+    for _ in range(11):
+        try:
+            await otp_service.request_otp(mdb, s, "+919000000010", now=now)
+        except otp_service.OtpError as e:
+            codes.append(e.code)
+    assert codes[:10] == ["send_failed"] * 10 and codes[10] == "send_failures"

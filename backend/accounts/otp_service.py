@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import uuid
@@ -27,6 +28,9 @@ from growth import events
 from growth.clock import as_utc, utcnow
 
 from .otp_providers import Senders, SendResult
+from .phone import mask
+
+log = logging.getLogger("accounts.otp")
 
 OTP_LEN = 6
 TTL_MIN = 10
@@ -38,6 +42,9 @@ MAX_PER_PHONE_DAY = 10
 # let only 30 of 500 people behind one IP sign up. The per-phone limits below are the real protection.
 MAX_PER_IP_HOUR = int(os.environ.get("OTP_MAX_PER_IP_HOUR", "1000") or 1000)
 MAX_ATTEMPTS = 5
+# Sends that failed (provider refused, network) don't use up the member's code allowance above; they have their own
+# brake so a broken template can't be retried against the provider without end.
+MAX_FAILED_PER_PHONE_HOUR = 10
 
 Channel = Literal["auto", "sms", "whatsapp"]
 
@@ -89,17 +96,23 @@ def new_code() -> str:
 
 
 async def _check_limits(db, phone: str, ip: str, now: datetime) -> None:
-    last = await db.otp_challenges.find_one({"phone": phone}, sort=[("created_at", -1)])
+    """Per-phone limits count only codes that were actually delivered: a failed send (e.g. a misconfigured WhatsApp
+    template) must not lock the member out before they ever receive a code."""
+    sent = {"phone": phone, "send_ok": True}
+    last = await db.otp_challenges.find_one(sent, sort=[("created_at", -1)])
     if last:
         wait = RESEND_COOLDOWN_S - int((now - as_utc(last["created_at"])).total_seconds())
         if wait > 0:
             raise OtpError("resend_cooldown", f"Wait {wait}s before asking for a new code.", 429,
                            retry_in=wait)
     hour, day = now - timedelta(hours=1), now - timedelta(days=1)
-    if await db.otp_challenges.count_documents({"phone": phone, "created_at": {"$gte": hour}}) >= MAX_PER_PHONE_HOUR:
+    if await db.otp_challenges.count_documents({**sent, "created_at": {"$gte": hour}}) >= MAX_PER_PHONE_HOUR:
         raise OtpError("phone_hourly_limit", "Too many codes requested. Try again in an hour.", 429)
-    if await db.otp_challenges.count_documents({"phone": phone, "created_at": {"$gte": day}}) >= MAX_PER_PHONE_DAY:
+    if await db.otp_challenges.count_documents({**sent, "created_at": {"$gte": day}}) >= MAX_PER_PHONE_DAY:
         raise OtpError("phone_daily_limit", "Too many codes today. Try again tomorrow.", 429)
+    failed = {"phone": phone, "send_ok": False, "created_at": {"$gte": hour}}
+    if await db.otp_challenges.count_documents(failed) >= MAX_FAILED_PER_PHONE_HOUR:
+        raise OtpError("send_failures", "We couldn't send codes to this number several times. Try again in an hour.", 429)
     if ip and await db.otp_challenges.count_documents({"ip": ip, "created_at": {"$gte": hour}}) >= MAX_PER_IP_HOUR:
         raise OtpError("ip_limit", "Too many requests from this network. Try again later.", 429)
 
@@ -169,6 +182,8 @@ async def request_otp(
         "superseded": False, "ip": ip, "created_at": now,
         "expires_at": now + timedelta(minutes=TTL_MIN), "purge_at": now + timedelta(days=1)})
     if not res.ok:
+        # The provider's reason goes to the server log (Railway › Logs), never to the member's screen.
+        log.warning("OTP send failed for %s via %s/%s: %s", mask(phone), res.provider, res.channel, (res.error or "")[:300])
         await events.track(db, "otp_failed", anon_id=anon_id,
                            props={"reason": "send_failed", "provider": res.provider,
                                   "error": (res.error or "")[:120]})
