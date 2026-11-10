@@ -14,13 +14,26 @@ def test_client_ip_ignores_headers_the_client_can_forge(monkeypatch):
     from accounts.routes import client_ip
     monkeypatch.delenv("CLIENT_IP_HEADER", raising=False)
     monkeypatch.delenv("TRUSTED_PROXY_HOPS", raising=False)
-    # Railway's edge appends the address it saw; whatever the visitor sent comes before it.
-    assert client_ip(_req({"cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "9.9.9.9, 203.0.113.7"})) == "203.0.113.7"
+    # Railway's edge appends the visitor's address; whatever the visitor sent comes before it.
+    assert client_ip(_req({"cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "9.9.9.9, 81.2.69.142"})) == "81.2.69.142"
     assert client_ip(_req({"cf-connecting-ip": "1.1.1.1"})) == "10.0.0.5"
-    monkeypatch.setenv("TRUSTED_PROXY_HOPS", "2")              # e.g. Cloudflare in front of Railway
-    assert client_ip(_req({"x-forwarded-for": "9.9.9.9, 198.51.100.4, 172.16.0.1"})) == "198.51.100.4"
+    # Railway's own internal hop (changes per request) is skipped, so one visitor is one count (QA 10 Nov).
+    for hop in ("100.64.0.2", "100.97.13.8", "10.1.2.3", "fd12::1"):
+        assert client_ip(_req({"x-forwarded-for": f"9.9.9.9, 81.2.69.142, {hop}"})) == "81.2.69.142"
+    monkeypatch.setenv("TRUSTED_PROXY_HOPS", "1")              # e.g. Cloudflare in front of Railway
+    assert client_ip(_req({"x-forwarded-for": "9.9.9.9, 82.3.4.5, 172.64.1.1, 100.64.0.9"})) == "82.3.4.5"
     monkeypatch.setenv("CLIENT_IP_HEADER", "cf-connecting-ip")  # only when a proxy overwrites it
-    assert client_ip(_req({"cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "203.0.113.7"})) == "1.1.1.1"
+    assert client_ip(_req({"cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "81.2.69.142"})) == "1.1.1.1"
+
+
+def test_anon_xray_one_network_is_one_count_behind_changing_internal_hops(client, monkeypatch):
+    monkeypatch.setenv("ANON_XRAY_NOCOOKIE_PER_IP_DAY", "3")
+    codes = []
+    for i in range(5):
+        client.cookies.clear()
+        codes.append(client.post("/api/xray", json={"query": "SOL"},
+                                 headers={"x-forwarded-for": f"81.2.69.142, 100.64.{i}.{i + 1}"}).status_code)
+    assert codes == [200, 200, 200, 402, 402]
 
 
 def test_anon_xray_forged_ip_headers_get_no_fresh_check(client, monkeypatch):
@@ -29,7 +42,7 @@ def test_anon_xray_forged_ip_headers_get_no_fresh_check(client, monkeypatch):
     for i in range(6):
         client.cookies.clear()
         codes.append(client.post("/api/xray", json={"query": "SOL"}, headers={
-            "cf-connecting-ip": f"100.64.{i}.1", "x-forwarded-for": f"100.65.{i}.1, 203.0.113.7"}).status_code)
+            "cf-connecting-ip": f"100.64.{i}.1", "x-forwarded-for": f"100.65.{i}.1, 81.2.69.142"}).status_code)
     assert codes == [200, 200, 200, 402, 402, 402]
 
 
@@ -40,7 +53,7 @@ async def test_unknown_site_is_risky_and_known_site_still_safe():
         out = await run_xray(site)
         assert out["label"] != "safe", (site, out["score"])
     out = await run_xray("randomsite.com")
-    assert out["label"] == "risky" and "don't know this site" in out["headline"]
+    assert out["label"] == "unknown" and "don't know this site" in out["headline"]   # never "safe" (round 4: not "risky")
     for site in ("binance.com", "https://www.coingecko.com/en/coins/bitcoin"):
         assert (await run_xray(site))["label"] == "safe"
 

@@ -23,11 +23,12 @@ export function Move({ v, className = "", decimals = 1 }) {
   return <span className={`${n > 0 ? "text-bz-accent" : n < 0 ? "text-bz-miss" : "text-bz-muted"} font-semibold tabular ${className}`}>{pct(n, decimals)}</span>;
 }
 
-// X-Ray label: safe / risky / likely_scam.
+// X-Ray label: safe / risky / likely_scam, plus unknown (a site we don't know, nothing else wrong).
 export const XRAY = {
   safe: { label: "Looks safe", tone: "bull", bar: "accent" },
   risky: { label: "Risky", tone: "gold", bar: "gold" },
   likely_scam: { label: "Likely scam", tone: "bear", bar: "miss" },
+  unknown: { label: "Unknown site", tone: "gold", bar: "gold" },
   unchecked: { label: "Not checked yet", tone: "muted", bar: "gold" },   // the check couldn't run; retried later
 };
 export function XrayChip({ label, score }) {

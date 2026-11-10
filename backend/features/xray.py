@@ -92,7 +92,7 @@ LINK_WORDS = ("airdrop", "claim", "giveaway", "double", "bonus", "reward", "conn
               "verify", "validate", "support", "recover", "unlock", "kyc", "free-crypto", "doubler", "profit",
               "earn", "mining", "payout", "withdraw", "wallet-sync", "presale", "restore", "seed-phrase", "rectify")
 # Bump when the X-Ray rules change, so saved results (the radar) are checked again under the new rules.
-XRAY_RULES_VERSION = 3
+XRAY_RULES_VERSION = 4
 
 URL_RE = re.compile(r"(https?://[^\s]+|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/[^\s]*)?)", re.I)
 EVM_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
@@ -103,7 +103,7 @@ MSG_RULES: list[tuple[str, str, str, str]] = [   # (regex, severity, title, deta
      "high", "Promises guaranteed returns", "Nobody can guarantee crypto returns. This is the most common scam line."),
     (r"\b\d{1,3}\s?% (daily|per day|a day|weekly|per week|monthly|per month)",
      "high", "Promises a fixed % every day/week/month", "Fixed high returns are how Ponzi schemes pull people in."),
-    (r"double your|2x your|triple your|10x (in|within)", "high", "Promises to multiply your money",
+    (r"double (your|it|them|the|my)|2x your|triple your|10x (in|within)|multiply your", "high", "Promises to multiply your money",
      "Real investments don't promise to double money on a timetable."),
     (r"(send|deposit|transfer|pay)\b.{0,30}\b(usdt|crypto|btc|eth|bitcoin|money|amount|fee)|wallet address",
      "high", "Asks you to send money or crypto first", "Scammers ask for a deposit or a 'fee' before you can withdraw."),
@@ -117,7 +117,7 @@ MSG_RULES: list[tuple[str, str, str, str]] = [   # (regex, severity, title, deta
      "high", "Looks like a 'task' job scam", "Task scams pay small amounts first, then ask you to 'invest' to unlock bigger tasks."),
     (r"(sebi|rbi).{0,20}(approved|registered|guarantee)", "high", "Claims SEBI/RBI approval for crypto",
      "Crypto schemes in India are not SEBI or RBI approved. This claim is false."),
-    (r"only today|last chance|limited (slots|seats|time)|hurry|within \d+ ?(hours|hrs|minutes)|ends tonight",
+    (r"only today|last chance|limited (slots|seats|time|offer|period)|offer ends|hurry|within \d+ ?(hours|hrs|minutes)|ends tonight",
      "medium", "Rushes you", "Pressure to act fast stops you from checking. Real chances don't vanish in hours."),
     (r"telegram|vip group|signal group|whatsapp group|join (our|my|the) group|premium group",
      "medium", "Pulls you into a private group", "Pump-and-dump and fake-signal groups run on Telegram and WhatsApp."),
@@ -211,6 +211,10 @@ def link_flags(url: str) -> tuple[list[dict], list[str]]:
     return red, green
 
 
+SEND_FIRST = "Asks you to send money or crypto first"
+RETURN_PROMISES = {"Promises guaranteed returns", "Promises a fixed % every day/week/month", "Promises to multiply your money"}
+
+
 def message_flags(text: str) -> tuple[list[dict], list[str]]:
     red, green = [], []
     t = text.lower()
@@ -226,6 +230,13 @@ def message_flags(text: str) -> tuple[list[dict], list[str]]:
             for f in r:
                 f["title"] = f"Link: {f['title']}"
             red.extend(r)
+    # "Send us crypto and we'll double it" is the classic giveaway scam: asking for money first together with a
+    # promised return is decisive on its own (QA 10 Nov: "send 0.1 BTC to double it" was only risky 45).
+    titles = {f["title"] for f in red}
+    if SEND_FIRST in titles and titles & RETURN_PROMISES:
+        for f in red:
+            if f["title"] == SEND_FIRST:
+                f["decisive"] = True
     if not red:
         green.append("No common scam lines found")
     return red, green
@@ -381,7 +392,8 @@ def _fake_headline(kind: str, label: str, red: list[dict], coin: Optional[dict])
                 "likely_scam": f"Stay away: {red[0]['title'].lower() if red else 'too many warning signs'}."}[label]
     elif kind == "link":
         unknown = any(f["title"] == UNKNOWN_SITE for f in red) and not any(f["severity"] != "low" for f in red)
-        head = {"safe": "This looks like an official site. Still type the address yourself instead of clicking.",
+        head = {"unknown": "We don't know this site. Don't log in, pay or connect a wallet until you've checked who runs it.",
+                "safe": "This looks like an official site. Still type the address yourself instead of clicking.",
                 "risky": ("We don't know this site. Don't log in, pay or connect a wallet until you've checked who runs it."
                           if unknown else "Be careful with this link — check the address letter by letter."),
                 "likely_scam": "Don't open this link or connect a wallet to it."}[label]
@@ -404,6 +416,8 @@ async def run_xray(query: str) -> dict:
     else:
         red, green, coin = await coin_flags(q)
     score, label = score_of(red, green, (coin or {}).get("rank"))
+    if kind == "link" and red and all(f["title"] == UNKNOWN_SITE for f in red):
+        label = "unknown"                  # nothing wrong found, but not a site we know: "Unknown site", not "Risky"
     red.sort(key=lambda f: {"high": 0, "medium": 1, "low": 2}[f["severity"]])
     sys = ("You explain crypto risk to Indian beginners in plain, calm English. One short sentence for `headline` "
            "(the answer first). For coins, `what_it_does` in two plain sentences, no hype, no price prediction, "

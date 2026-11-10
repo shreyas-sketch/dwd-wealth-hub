@@ -12,6 +12,7 @@ QA_MODE: codes go to the console sender, the code comes back as `dev_code`, and
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import re
@@ -55,14 +56,30 @@ def _senders() -> Senders:
     return _state["senders"]
 
 
+def _internal(ip: str) -> bool:
+    """A hop inside the hosting network (private, loopback, link-local, CGNAT 100.64/10), not a visitor."""
+    try:
+        a = ipaddress.ip_address(ip.split("%")[0])
+    except ValueError:
+        return False
+    if isinstance(a, ipaddress.IPv6Address) and a.ipv4_mapped:
+        a = a.ipv4_mapped
+    return a.is_private or a.is_loopback or a.is_link_local or a.is_reserved or a in _CGNAT
+
+
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
+
 def client_ip(request: Request) -> str:
     """The visitor's IP for rate limits (anonymous X-Ray, OTP per IP).
 
-    Only headers set by our own proxy count. A browser or script can send any CF-Connecting-IP or X-Forwarded-For it
-    likes, so reading those as-is let one visitor look like a new network on every request (QA 10 Nov). Railway's
-    edge appends the address it saw to X-Forwarded-For, so the real client is the entry TRUSTED_PROXY_HOPS from the
-    right (default 1). Set CLIENT_IP_HEADER (e.g. cf-connecting-ip) only when a proxy in front, such as Cloudflare,
-    overwrites that header on every request.
+    A browser or script can send any CF-Connecting-IP or X-Forwarded-For it likes, so only what our own proxies
+    add counts. Each proxy appends the address it saw, so walk X-Forwarded-For from the right: skip the hosting
+    network's internal hops (Railway adds one that changes between requests, which split one visitor across many
+    counts — QA 10 Nov), then skip TRUSTED_PROXY_HOPS public proxies (default 0; Cloudflare in front = 1). The next
+    entry is the visitor; anything a visitor sent sits to its left and is ignored. Set CLIENT_IP_HEADER (e.g.
+    cf-connecting-ip) only when a proxy in front overwrites that header on every request. LOG_CLIENT_IP=true logs
+    the raw header and the chosen IP, to check the setup on a new host.
     """
     name = (os.environ.get("CLIENT_IP_HEADER") or "").strip().lower()
     if name:
@@ -70,13 +87,24 @@ def client_ip(request: Request) -> str:
         if v:
             return v.split(",")[0].strip()[:64]
     try:
-        hops = max(0, int(os.environ.get("TRUSTED_PROXY_HOPS", "1") or 1))
+        skip = max(0, int(os.environ.get("TRUSTED_PROXY_HOPS", "0") or 0))
     except ValueError:
-        hops = 1
-    xff = [p.strip() for p in ",".join(request.headers.getlist("x-forwarded-for")).split(",") if p.strip()]
-    if hops and xff:
-        return xff[-min(hops, len(xff))][:64]
-    return (request.client.host if request.client else "") or ""
+        skip = 0
+    raw = ",".join(request.headers.getlist("x-forwarded-for"))
+    hops = [p.strip() for p in raw.split(",") if p.strip()]
+    ip = ""
+    public = [h for h in reversed(hops) if not _internal(h)]
+    if len(public) > skip:
+        ip = public[skip]
+    elif public:
+        ip = public[-1]                       # fewer public hops than configured: the left-most public one
+    elif hops:
+        ip = hops[0]                          # every hop internal (a private network): the original sender
+    ip = (ip or (request.client.host if request.client else "") or "")[:64]
+    if (os.environ.get("LOG_CLIENT_IP") or "").strip().lower() in ("1", "true", "yes"):
+        log.info("client_ip: x-forwarded-for=%r x-real-ip=%r peer=%r -> %s", raw, request.headers.get("x-real-ip"),
+                 request.client.host if request.client else None, ip)
+    return ip
 
 
 class OtpRequestIn(BaseModel):
