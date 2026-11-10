@@ -129,7 +129,8 @@ async def job_digest(ctx) -> dict:
     rows = [r async for r in d.radar_items.find({"kind": "new_listing", "listed_at": {"$gte": since}})]
     if not rows:
         return {"sent": 0}
-    labels = {"safe": "looks safe", "risky": "risky", "likely_scam": "likely scam", "unchecked": "not checked yet"}
+    labels = {"safe": "looks safe", "risky": "risky", "likely_scam": "likely scam", "unknown": "unknown site",
+              "unchecked": "not checked yet"}
     text = "; ".join(f"{r['symbol']} on {venue_name(r['venue'])} ({labels.get((r.get('xray') or {}).get('label'), 'not checked yet')})"
                      for r in rows[:6])
     day = ctx.now.astimezone(IST).date().isoformat()
