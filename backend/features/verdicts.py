@@ -90,7 +90,7 @@ class Signal:
 
 # Always-true context used to fill a side to 3 points when the indicators give fewer.
 _BULL_FILLERS = (
-    Signal("Big, liquid coin listed on every major exchange.", "Rank #{rank} by market size"),
+    Signal("One of the largest coins by market value, so it trades a lot every day.", "Rank #{rank} by market size"),
     Signal("Steady buyers through past cycles have been rewarded over the long run.", "Past 4-year cycles"),
     Signal("Regular monthly buying smooths out the jumps.", "Rupee-cost averaging"),
 )
@@ -171,13 +171,16 @@ async def committee(sym: str, name: str, ind: dict) -> dict:
               f"EMA50 {ind['ema50']:.4g}, 7d {ind['chg7']}%, 30d {ind['chg30']}%, yearly volatility {ind['vol30_ann']}%, "
               f"from 90-day high {ind['drawdown90']}%.\nReturn {{\"bull\": [3 short points], \"bear\": [3 short points], "
               '"verdict": "Bullish|Neutral|Bearish", "confidence": 0-100, "summary": one line, "chair": two sentences}.')
+    # made_by: "ai" when the model's answer is used, "rules" when the backup wording is (no key, AI error, bad reply),
+    # so the page never calls a rule-made verdict an AI committee's (QA 10 Nov).
     try:
         out = await llm.complete_json(task="committee", system=sys, prompt=prompt, fake=fake, model="strong")
+        made_by = "rules" if llm.mode() == "fake" else "ai"
         if out.get("verdict") not in ("Bullish", "Neutral", "Bearish"):
-            out = fake()
+            out, made_by = fake(), "rules"
     except llm.LLMError:
-        out = fake()
-    return out
+        out, made_by = fake(), "rules"
+    return {**out, "made_by": made_by}
 
 
 async def job_daily(ctx) -> dict:
@@ -207,7 +210,7 @@ async def job_daily(ctx) -> dict:
                "price_usd": (live.get(sym) or {}).get("price_usd") or c.get("price_usd"),
                "price_source": (live.get(sym) or {}).get("source") or market.price_source(),
                "indicators": {k: (round(v, 6) if isinstance(v, float) else v) for k, v in ind.items()},
-               "changed_from": changed_from, "created_at": ctx.now}
+               "changed_from": changed_from, "made_by": out.get("made_by", "rules"), "created_at": ctx.now}
         await d.verdicts.replace_one({"_id": doc["_id"]}, doc, upsert=True)
         done += 1
         if changed_from:
@@ -229,7 +232,7 @@ def shape(v: dict, details: bool, live: Optional[dict] = None, watched: bool = F
            "price_usd": smart_round((live or {}).get("price_usd") or v.get("price_usd")),
            "change_24h": r2((live or {}).get("change_24h")), "verdict": v["verdict"], "confidence": v["confidence"],
            "changed_from": v.get("changed_from"), "summary": v.get("summary"), "watched": watched, "date": v["date"],
-           "bull": None, "bear": None, "chair": None}
+           "bull": None, "bear": None, "chair": None, "made_by": v.get("made_by", "rules")}
     if details:
         out.update(bull=v.get("bull"), bear=v.get("bear"), chair=v.get("chair"))
     return out
@@ -395,13 +398,15 @@ async def debate_for(sym: str) -> dict:
               f"EMA20 {ind['ema20']:.4g} vs EMA50 {ind['ema50']:.4g}, yearly volatility {ind['vol30_ann']}%, "
               f"from 90-day high {ind['drawdown90']}%, market cap rank {info.get('rank')}.\n"
               'Return {"bull": [{"point", "evidence"}], "bear": [{"point", "evidence"}], "chair": {"verdict": "Bullish|Neutral|Bearish", "confidence": 0-100, "call": str}}.')
+    made_by = "rules"
     try:
-        out = _valid_debate(await llm.complete_json(task="debate", system=sys, prompt=prompt, fake=fake, model="strong",
-                                                    max_tokens=1500)) or fake()
+        got = _valid_debate(await llm.complete_json(task="debate", system=sys, prompt=prompt, fake=fake, model="strong",
+                                                    max_tokens=4000))
+        out, made_by = (got, "ai" if llm.mode() != "fake" else "rules") if got else (fake(), "rules")
     except llm.LLMError:
         out = fake()
     return {"symbol": sym, "bull": out.get("bull", [])[:3], "bear": out.get("bear", [])[:3], "chair": out.get("chair"),
-            "as_of": iso(utcnow()), "disclaimer": DISCLAIMER}
+            "made_by": made_by, "as_of": iso(utcnow()), "disclaimer": DISCLAIMER}
 
 
 @router.post("/verdicts/debate")

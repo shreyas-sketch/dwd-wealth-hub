@@ -1,4 +1,5 @@
 // /app/xray — Coin X-Ray full page: checker, usage line, history.
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { History } from "lucide-react";
 import { api } from "@/lib/api";
@@ -42,14 +43,15 @@ function HistoryList() {
 
 export default function XrayPage() {
   const { plan, refreshMe } = useAuth();
+  const [checked, setChecked] = useState(false);     // after a check, the result shows the up-to-date usage line
   const header = <PageHeader eyebrow={["Coin", "_X-Ray"]} title="Is it safe," accent="or a scam?" sub="Paste a coin name, contract address, link or a message you got. You get a plain answer in seconds." />;
   return (
     <Gate feature="xray" header={header}>
       <div className="space-y-5">
         {header}
         <Card>
-          <XrayBox autoFocus onDone={() => refreshMe()} />
-          <UsageLine usage={plan?.limits?.xray} what="checks" className="mt-3" />
+          <XrayBox autoFocus onDone={() => { setChecked(true); refreshMe(); }} />
+          {!checked && <UsageLine usage={plan?.limits?.xray} what="checks" className="mt-3" />}
         </Card>
         <HistoryList />
       </div>

@@ -133,7 +133,7 @@ export function Sheet({ open, onClose, title, children, wide = false }) {
       <div className={`relative w-full ${wide ? "sm:max-w-[820px]" : "sm:max-w-[620px]"} max-h-[92vh] overflow-y-auto bg-bz-card rounded-t-[16px] sm:rounded-bzcard border border-bz-line shadow-bzsheet pb-[env(safe-area-inset-bottom)]`}>
         <div className="sticky top-0 z-10 bg-bz-card flex items-center justify-between px-5 pt-4 pb-3 border-b border-bz-line">
           <h2 className="font-bzserif text-[20px] font-semibold">{title}</h2>
-          <button type="button" onClick={onClose} className="font-bzmono text-[11px] uppercase tracking-[0.2em] text-bz-muted px-2 py-2 rounded-bzbtn hover:bg-bz-inset">Close</button>
+          <button type="button" onClick={onClose} className="text-[15px] font-semibold text-bz-muted px-3 py-2 rounded-full hover:bg-bz-inset hover:text-bz-ink">Close</button>
         </div>
         <div className="p-5">{children}</div>
       </div>

@@ -62,7 +62,7 @@ export default function PlanCard({ p, actions = null }) {
                     <Chip>Assumption</Chip>
                   </div>
                   <div className={`text-[24px] font-semibold tabular mt-2 ${m.tone}`}>{inr(s.end_value_inr)}</div>
-                  <div className="text-[13px] text-bz-muted">if it grows {pct(s.annual_pct, 0, false)} a year</div>
+                  <div className="text-[13px] text-bz-muted">{Number(s.annual_pct) < 0 ? `if it falls ${pct(Math.abs(s.annual_pct), 1, false)} a year` : `if it grows ${pct(s.annual_pct, 1, false)} a year`}</div>
                   <div className={`mt-2 flex items-center gap-1.5 text-[13.5px] font-semibold ${s.reaches_goal ? "text-bz-accent" : "text-bz-miss"}`}>
                     {s.reaches_goal ? <CheckCircle2 className="w-4 h-4" aria-hidden /> : <XCircle className="w-4 h-4" aria-hidden />}
                     {s.reaches_goal ? "Reaches the goal" : "Falls short of the goal"}

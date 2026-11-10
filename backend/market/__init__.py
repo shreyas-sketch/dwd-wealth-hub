@@ -28,7 +28,8 @@ _cache: dict[str, tuple[float, Any]] = {}
 _provider = {"obj": None, "mode": None}
 _td: dict = {"obj": None, "key": None}
 
-STABLES = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE"}
+STABLES = {"USDT", "USDC", "DAI", "FDUSD", "TUSD", "USDE", "USDS", "PYUSD", "USD1", "RLUSD", "BUSD", "USDD", "FRAX",
+           "LUSD", "GHO", "CRVUSD", "SUSDE", "EURC", "EURT"}
 
 
 def provider():
@@ -139,10 +140,38 @@ def clear_cache() -> None:
     _td["obj"] = None
 
 
-async def top_coins(n: int = 10, exclude_stables: bool = True) -> list[dict]:
-    rows = await _cached(f"top:{n + 10}", 120, lambda: provider().top_coins(n + 10))
+# Not coins a beginner gets a daily call on: wrapped or staked versions of another coin, tokenised gold, funds and
+# loans. (QA 10 Nov: "Figure Heloc", a tokenised home-equity loan, was in the daily top 10.)
+NOT_COINS = {"WBTC", "WETH", "STETH", "WSTETH", "WEETH", "EETH", "CBBTC", "CBETH", "RETH", "METH", "BETH", "EZETH",
+             "RSETH", "SFRXETH", "TBTC", "LBTC", "SOLVBTC", "BTCB", "JITOSOL", "MSOL", "BNSOL", "JUPSOL", "WBETH",
+             "XAUT", "PAXG", "BUIDL", "USYC", "OUSG", "USTB", "WTRX", "WBNB", "WAVAX", "WSOL", "WHYPE"}
+
+
+def is_plain_coin(row: dict) -> bool:
+    sym = str(row.get("symbol") or "").upper()
+    if not sym or not sym.isalnum():                  # FIGR_HELOC, BSC-USD, USDC.E …
+        return False
+    if sym in STABLES or sym in NOT_COINS or "USD" in sym:   # USDS, USD1, PYUSD …
+        return False
+    return True
+
+
+async def top_coins(n: int = 10, exclude_stables: bool = True, tradable: bool = True) -> list[dict]:
+    """The n largest coins by market value that are real coins and, with `tradable`, have a USDT pair on Binance or
+    KuCoin (what the app's buy features use). If the exchange lists can't be read, that check is skipped rather than
+    leaving the list empty."""
+    rows = await _cached(f"top:{n + 30}", 120, lambda: provider().top_coins(n + 30))
     if exclude_stables:
-        rows = [r for r in rows if r["symbol"] not in STABLES]
+        rows = [r for r in rows if is_plain_coin(r)]
+    if tradable:
+        listed: set[str] = set()
+        for venue in ("binance", "kucoin"):
+            try:
+                listed |= set(await listings(venue))
+            except Exception:  # noqa: BLE001
+                pass
+        if listed:
+            rows = [r for r in rows if r["symbol"] in listed]
     return rows[:n]
 
 

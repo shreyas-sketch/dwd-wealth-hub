@@ -15,7 +15,9 @@ def test_plan_scenarios_and_limits(client):
     assert [a["symbol"] for a in p["allocation"]] == ["BTC", "ETH", "SOL", "XRP"]
     assert p["invested_total_inr"] == 50000 + 5000 * 60
     sc = {s["key"]: s for s in p["scenarios"]}
-    assert sc["bad"]["end_value_inr"] == 350000 and sc["good"]["end_value_inr"] > sc["average"]["end_value_inr"] > 350000
+    # bad case loses money (default −15% a year for Bitcoin, scaled by the moderate mix 1.15×)
+    assert sc["bad"]["annual_pct"] == -17.2 and sc["bad"]["end_value_inr"] < 350000
+    assert sc["good"]["end_value_inr"] > sc["average"]["end_value_inr"] > 350000
     assert len(p["yearly"]) == 5
     r = client.post("/api/plan", json=PLAN)
     assert r.status_code == 403 and r.json()["detail"]["plan_needed"] == "pro"

@@ -76,7 +76,10 @@ def _crash(r: dict) -> str:
 
 
 def _radar(r: dict) -> str:
-    return f"{_n(r.get('new_listings'), 'new listing')}, {_n(r.get('trending'), 'trending coin')} checked."
+    s = f"{_n(r.get('new_listings'), 'new listing')}, {_n(r.get('trending'), 'trending coin')} checked."
+    if r.get("unchecked"):
+        s += f" {_n(r['unchecked'], 'coin')} couldn't be X-Rayed yet (data source busy); retried next scan."
+    return s
 
 
 FORMATTERS: dict[str, Callable[[dict], str]] = {

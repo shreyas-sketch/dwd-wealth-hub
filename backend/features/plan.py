@@ -3,8 +3,11 @@
 crypto_plans {_id, user_id, goal_name, target_inr, lump_sum_inr, monthly_inr, years, risk, allocation,
               paper_started, created_at, updated_at}
 
-Scenarios compound monthly at the admin's assumed yearly rates (Admin › Settings, default bad 0%,
-average 15%, good 35%) — always shown as assumptions, never as a promise.
+Scenarios compound monthly at assumed yearly rates — always shown as assumptions, never as a promise.
+The admin's rates (Admin › Settings, default bad −15%, average 15%, good 35%) describe Bitcoin. A plan's own rate
+scales them by its mix: ETH, SOL and XRP move further than Bitcoin both ways (COIN_FACTOR) and USDT doesn't grow.
+So Aggressive shows a bigger upside and a bigger downside than Safe (QA 10 Nov: every risk level showed the same
+numbers, and the USDT cushion "grew" 35% a year).
 """
 from __future__ import annotations
 
@@ -32,8 +35,30 @@ ALLOCATIONS = {
     "aggressive": [("BTC", 40), ("ETH", 25), ("SOL", 20), ("XRP", 15)],
 }
 LABELS = {"bad": "Bad market", "average": "Average market", "good": "Good market"}
-NOTE = ("These are assumed yearly growth rates to help you plan, not a promise. Crypto can also fall a lot and stay "
-        "down for years. USDT is a dollar-linked stable coin kept as a cushion.")
+# How far each coin tends to move relative to Bitcoin, up and down (an assumption for planning, not a measurement).
+COIN_FACTOR = {"BTC": 1.0, "ETH": 1.2, "SOL": 1.5, "XRP": 1.4, "USDT": 0.0}
+OTHER_COIN_FACTOR = 1.5
+
+
+def mix_factor(allocation: list) -> float:
+    total = sum(float(a["pct"]) for a in allocation) or 100.0
+    return sum(float(a["pct"]) / total * COIN_FACTOR.get(a["symbol"], OTHER_COIN_FACTOR) for a in allocation)
+
+
+def plan_rates(base: dict, allocation: list) -> dict:
+    """The admin's Bitcoin rates scaled to this plan's mix; e.g. Safe (70/20/10 BTC/ETH/USDT) = 0.94 × Bitcoin."""
+    f = mix_factor(allocation)
+    return {k: round(float(base[k]) * f, 1) for k in ("bad", "average", "good")}
+
+
+def note_for(allocation: list) -> str:
+    syms = {a["symbol"] for a in allocation}
+    text = ("These are assumed yearly growth rates to help you plan, not a promise. They are based on Bitcoin; "
+            "Ethereum, Solana and XRP are assumed to move further than Bitcoin in both directions. Crypto has fallen "
+            "70–80% from its peak in past cycles and can stay down for years.")
+    if "USDT" in syms:
+        text += " USDT is a dollar-linked stable coin kept as a cushion; it is assumed not to grow."
+    return text
 
 
 class PlanIn(BaseModel):
@@ -96,6 +121,7 @@ async def portfolio_for(user: dict) -> dict:
 
 async def shape(user: dict, p: dict, rates: dict, portfolio: Optional[dict] = None, paper: Optional[dict] = None) -> dict:
     years = p["years"]
+    rates = plan_rates(rates, p["allocation"])
     proj = {k: project(p["lump_sum_inr"], p["monthly_inr"], years, rates[k]) for k in ("bad", "average", "good")}
     yearly = [{"year": y + 1, "invested_inr": round(p["lump_sum_inr"] + p["monthly_inr"] * 12 * (y + 1)),
                "bad_inr": round(proj["bad"][y]), "average_inr": round(proj["average"][y]), "good_inr": round(proj["good"][y])}
@@ -114,7 +140,8 @@ async def shape(user: dict, p: dict, rates: dict, portfolio: Optional[dict] = No
             "yearly": yearly,
             "goal_progress": {"value_inr": round(value, 2), "pct": round(min(100.0, value / p["target_inr"] * 100), 1) if value else 0.0,
                               "source": source},
-            "paper_started": bool(p.get("paper_started")), "created_at": iso(p.get("created_at")), "note": NOTE}
+            "paper_started": bool(p.get("paper_started")), "created_at": iso(p.get("created_at")),
+            "note": note_for(p["allocation"])}
 
 
 async def _context(user: dict) -> tuple[dict, Optional[dict], Optional[dict]]:

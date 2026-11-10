@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -58,8 +59,10 @@ async def run(db, name: str, now: Optional[datetime] = None) -> dict:
     now = now or utcnow()
     t0 = time.time()
     row = {"_id": uuid.uuid4().hex, "name": name, "at": now}
+    from core.http import patient
     try:
-        result = await _fn(JOBS[name][2])(Ctx(db, now))
+        with patient(float(os.environ.get("JOB_API_WAIT_S", "90") or 90)):   # jobs may wait for API budgets
+            result = await _fn(JOBS[name][2])(Ctx(db, now))
         row.update(ok=True, result=result)
     except Exception as e:  # noqa: BLE001
         log.exception("job %s failed", name)

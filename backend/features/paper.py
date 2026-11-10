@@ -69,7 +69,25 @@ async def view(user: dict, doc: Optional[dict] = None) -> dict:
     return {"start_inr": start, "cash_inr": round(doc["cash_inr"], 2), "value_inr": round(total, 2),
             "pnl_inr": round(total - start, 2), "pnl_pct": round((total / start - 1) * 100, 2),
             "positions": rows, "history": hist, "plan_id": doc.get("plan_id"), "can_trade": can_trade,
-            "started_at": iso(doc.get("started_at"))}
+            "started_at": iso(doc.get("started_at")), "plan_drift": await _plan_drift(uid, doc)}
+
+
+async def _plan_drift(uid: str, doc: dict) -> Optional[dict]:
+    """When the plan this practice money was started from now has different coins (the member edited it, e.g.
+    Moderate → Safe), say so, so the screen can offer to rebalance. Trades the member made on purpose are never
+    undone without asking (QA 10 Nov: Paper Money kept SOL and XRP after the plan changed to BTC/ETH/USDT)."""
+    if not doc.get("plan_id"):
+        return None
+    plan = await db().crypto_plans.find_one({"_id": doc["plan_id"], "user_id": uid}, {"allocation": 1, "goal_name": 1})
+    if not plan:
+        return None
+    want = {a["symbol"] for a in plan["allocation"] if a["symbol"] != "USDT" and a["pct"] > 0}
+    have = {s for s, p in (doc.get("positions") or {}).items() if p.get("qty", 0) > 0}
+    if want == have:
+        return None
+    return {"plan_id": plan["_id"], "goal_name": plan.get("goal_name"),
+            "plan_split": [{"symbol": a["symbol"], "pct": a["pct"]} for a in plan["allocation"]],
+            "not_in_plan": sorted(have - want), "missing": sorted(want - have)}
 
 
 async def buy_many(user: dict, amounts_inr: dict[str, float], *, plan_id: Optional[str] = None, fresh: bool = False,
@@ -148,6 +166,35 @@ async def trade(body: TradeIn, user: dict = Depends(user_dep())):
                                                               "price_inr": px, "note": "manual"}]
         await db().paper.replace_one({"_id": uid}, doc)
     await events.track(db(), "paper_trade", user_id=uid, props={"symbol": sym, "side": body.side})
+    return await view(user, doc)
+
+
+@router.post("/paper/rebalance")
+async def rebalance(user: dict = Depends(user_dep())):
+    """Sell everything at live prices and buy the linked plan's current split with 90% of the total (10% stays as
+    cash, like a fresh start). The value history and trade log are kept."""
+    uid = str(user["_id"])
+    doc = await db().paper.find_one({"_id": uid})
+    if not doc or not doc.get("plan_id"):
+        raise HTTPException(status_code=400, detail={"code": "no_paper", "msg": "Start Paper Money from a plan first."})
+    plan = await db().crypto_plans.find_one({"_id": doc["plan_id"], "user_id": uid})
+    if not plan:
+        raise HTTPException(status_code=404, detail={"code": "no_plan", "msg": "The plan this practice money follows was deleted."})
+    pos = doc.get("positions") or {}
+    px = await _prices_inr(list(pos))
+    missing = [s for s in pos if s not in px]
+    if missing:
+        raise HTTPException(status_code=503, detail={"code": "no_price", "msg": f"No price for {', '.join(missing)} right now. Try again shortly."})
+    now = utcnow()
+    trades = doc.get("trades") or []
+    for s, p in pos.items():
+        trades.append({"at": now, "symbol": s, "side": "sell", "inr": p["qty"] * px[s], "price_inr": px[s], "note": "rebalance"})
+    total = doc["cash_inr"] + sum(p["qty"] * px[s] for s, p in pos.items())
+    doc.update(cash_inr=total, positions={}, trades=trades[-200:])
+    await db().paper.replace_one({"_id": uid}, doc)
+    amounts = {a["symbol"]: total * 0.9 * a["pct"] / 100 for a in plan["allocation"]}
+    doc = await buy_many(user, amounts, plan_id=plan["_id"], note="rebalance to plan")
+    await events.track(db(), "paper_rebalanced", user_id=uid)
     return await view(user, doc)
 
 

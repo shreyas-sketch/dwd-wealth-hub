@@ -9,6 +9,7 @@ import PaperSection from "../components/plan/PaperSection";
 import PortfolioSection from "../components/plan/PortfolioSection";
 import { Button, Card, Empty, Label, Loadable, PageHeader } from "../components/ui";
 import { Gate } from "../components/common";
+import { useConfirm } from "../components/Confirm";
 
 function PlanTabs({ plans, sel, setSel }) {
   if (plans.length < 2) return null;
@@ -26,6 +27,7 @@ function PlanTabs({ plans, sel, setSel }) {
 
 export default function MyPlan() {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const q = useQuery({ queryKey: ["plans"], queryFn: async () => (await api.get("/plan")).data });
   const [sel, setSel] = useState(null);
   const [mode, setMode] = useState(null);        // null | "new" | "edit"
@@ -49,7 +51,8 @@ export default function MyPlan() {
     } catch (e) { setErr(apiError(e)); } finally { setBusy(false); }
   };
   const remove = async () => {
-    if (!current || !window.confirm(`Delete the plan "${current.goal_name}"?`)) return;
+    if (!current || !(await confirm({ title: "Delete this plan?", danger: true, confirmLabel: "Delete plan",
+      body: `"${current.goal_name}" and its projections will be removed. Paper Money started from it keeps its coins.` }))) return;
     try { await api.delete(`/plan/${current.id}`); setSel(null); qc.invalidateQueries({ queryKey: ["plans"] }); }
     catch (e) { setErr(apiError(e)); }
   };

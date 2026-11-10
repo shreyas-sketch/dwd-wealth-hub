@@ -16,7 +16,8 @@ from typing import Any, Optional
 
 DEFAULTS: dict = {
     "trial_days": 3,                                   # new accounts get the ₹5,000 plan as a trial (webinar → Day 3 call)
-    "scenario_rates": {"bad": 0.0, "average": 15.0, "good": 35.0},   # % a year — labelled assumptions in My Crypto Plan
+    # % a year for Bitcoin — labelled assumptions in My Crypto Plan; each plan scales them by its coin mix
+    "scenario_rates": {"bad": -15.0, "average": 15.0, "good": 35.0},
     "crash_levels": [20, 30, 40],                      # BTC fall from its 30-day high, in %
     "anon_xray_per_day": 1,                            # Coin X-Ray checks per day without an account
 }

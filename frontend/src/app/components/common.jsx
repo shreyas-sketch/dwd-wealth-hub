@@ -28,6 +28,7 @@ export const XRAY = {
   safe: { label: "Looks safe", tone: "bull", bar: "accent" },
   risky: { label: "Risky", tone: "gold", bar: "gold" },
   likely_scam: { label: "Likely scam", tone: "bear", bar: "miss" },
+  unchecked: { label: "Not checked yet", tone: "muted", bar: "gold" },   // the check couldn't run; retried later
 };
 export function XrayChip({ label, score }) {
   const x = XRAY[label];
@@ -47,11 +48,14 @@ export function CoinBadge({ symbol, size = 36 }) {
 }
 
 // "You've used 2 of 30 this month" from {used, limit}.
+// `what` is the plural noun ("checks", "chart reads"); one use reads "1 check" (QA 10 Nov: "1 checks used").
 export function UsageLine({ usage, what = "checks", className = "" }) {
   if (!usage || usage.used == null) return null;
+  const n = Number(usage.used);
+  const noun = n === 1 ? what.replace(/s$/, "") : what;
   const text = usage.limit == null
-    ? `${usage.used} ${what} used this month · unlimited on your plan`
-    : `You've used ${usage.used} of ${usage.limit} ${what} this month`;
+    ? `${n.toLocaleString("en-IN")} ${noun} used this month. Unlimited on your plan.`
+    : `You've used ${n.toLocaleString("en-IN")} of ${usage.limit} ${what} this month.`;
   return <p className={`text-[13px] text-bz-muted ${className}`}>{text}</p>;
 }
 

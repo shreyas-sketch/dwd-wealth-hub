@@ -6,6 +6,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { ThemeProvider } from "@/context/ThemeContext";
 import AppShell, { RequireAuth } from "@/app/components/AppShell";
 import GateSheet from "@/app/components/GateSheet";
+import { ConfirmProvider } from "@/app/components/Confirm";
 import { Spinner } from "@/app/components/ui";
 import Landing from "@/app/pages/Landing";
 import Login from "@/app/pages/Login";
@@ -39,6 +40,7 @@ export default function App() {
     <ThemeProvider>
       <BrowserRouter>
         <AuthProvider>
+          <ConfirmProvider>
           <GateSheet />
           <Suspense fallback={fallback}>
             <Routes>
@@ -76,6 +78,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
+          </ConfirmProvider>
         </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>

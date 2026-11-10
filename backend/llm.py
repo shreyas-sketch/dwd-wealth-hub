@@ -135,14 +135,54 @@ async def _guarded(coro_fn, task: str, model: str = "fast"):
     return await _pool(model).run(coro_fn, task)
 
 
+def _effort() -> str:
+    """Thinking depth for these short, structured tasks. The current models think before answering by default and
+    that thinking counts toward max_tokens; at the default effort a 1,200-token JSON reply could be cut off and the
+    feature silently fell back to its rule-based answer (QA 10 Nov: every verdict used the backup wording).
+    LLM_EFFORT=low|medium|high|xhigh|max; empty sends nothing (the model's default)."""
+    v = (os.environ.get("LLM_EFFORT") or "low").strip().lower()
+    return v if v in ("low", "medium", "high", "xhigh", "max") else ""
+
+
 async def _call_text(*, model: str, max_tokens: int, system: str, content) -> str:
+    extra = {"output_config": {"effort": _effort()}} if _effort() else None
+    # output_config goes through extra_body: the pinned SDK (anthropic 0.51) predates the named parameter.
     resp = await _client().messages.create(model=MODELS[model](), max_tokens=max_tokens, system=system,
-                                           messages=[{"role": "user", "content": content}])
-    return "".join(getattr(b, "text", "") for b in resp.content)
+                                           messages=[{"role": "user", "content": content}], extra_body=extra)
+    stop = getattr(resp, "stop_reason", None)
+    if stop == "max_tokens":
+        raise LLMError(f"reply cut off at max_tokens={max_tokens}")
+    if stop == "refusal":
+        raise LLMError("the model declined this request")
+    return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text" and getattr(b, "text", None))
 
 
 def mode() -> str:
     return vendor_mode("anthropic")
+
+
+# Per-worker record of how AI calls went, for Admin › Vendors: a feature that keeps falling back to its rule-based
+# answer is visible there with the reason (bad key, model refused, reply cut off, busy), instead of only in logs.
+_STATS: dict[str, dict] = {}
+
+
+def _record(task: str, ok: bool, error: Optional[str] = None) -> None:
+    s = _STATS.setdefault(task, {"task": task, "ok": 0, "failed": 0, "last_error": None, "last_error_at": None})
+    if ok:
+        s["ok"] += 1
+    else:
+        import time
+        s["failed"] += 1
+        s["last_error"], s["last_error_at"] = (error or "")[:200], time.time()
+
+
+def call_stats() -> list[dict]:
+    from datetime import datetime, timezone
+    out = []
+    for s in sorted(_STATS.values(), key=lambda x: x["task"]):
+        at = s["last_error_at"]
+        out.append({**s, "last_error_at": datetime.fromtimestamp(at, tz=timezone.utc).isoformat() if at else None})
+    return out
 
 
 _CLIENT: dict = {"c": None}
@@ -152,7 +192,8 @@ def _client():
     """One shared client per worker (connection pooling) instead of a new one per call."""
     if _CLIENT["c"] is None:
         import anthropic
-        _CLIENT["c"] = anthropic.AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"], max_retries=1)
+        key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip().strip("\"'").strip()
+        _CLIENT["c"] = anthropic.AsyncAnthropic(api_key=key, max_retries=1)
     return _CLIENT["c"]
 
 
@@ -169,16 +210,21 @@ def _parse(text: str) -> dict:
 
 
 async def complete_json(*, task: str, system: str, prompt: str, fake: Callable[[], Any], model: str = "fast",
-                        max_tokens: int = 1200, images: Optional[list[tuple[str, bytes]]] = None,
+                        max_tokens: int = 4000, images: Optional[list[tuple[str, bytes]]] = None,
                         fallback_on_error: bool = False) -> dict:
     """images: [(media_type, bytes)] for vision tasks. fallback_on_error: return fake() instead of raising."""
     try:
-        return await _complete_json(task=task, system=system, prompt=prompt, fake=fake, model=model,
-                                    max_tokens=max_tokens, images=images)
-    except LLMError:
+        out = await _complete_json(task=task, system=system, prompt=prompt, fake=fake, model=model,
+                                   max_tokens=max_tokens, images=images)
+    except LLMError as e:
+        if mode() != "fake":
+            _record(task, False, str(e))
         if fallback_on_error:
             return fake()
         raise
+    if mode() != "fake":
+        _record(task, True)
+    return out
 
 
 async def _fake_with_latency(fake: Callable[[], Any], task: str, model: str = "fast"):
@@ -209,15 +255,16 @@ async def _complete_json(*, task, system, prompt, fake, model, max_tokens, image
     try:
         text = await _guarded(lambda: _call_text(model=model, max_tokens=max_tokens, system=system, content=content), task, model)
         return _parse(text)
-    except LLMError:
+    except LLMError as e:
+        log.warning("LLM task %s: %s", task, e)
         raise
-    except Exception as e:  # noqa: BLE001
-        log.warning("LLM task %s failed: %s", task, e)
-        raise LLMError(f"AI call failed: {type(e).__name__}") from e
+    except Exception as e:  # noqa: BLE001 — e.g. AuthenticationError (bad key), NotFoundError (model), JSON errors
+        log.warning("LLM task %s failed: %s: %s", task, type(e).__name__, str(e)[:300])
+        raise LLMError(f"{type(e).__name__}: {str(e)[:160]}") from e
 
 
 async def complete_text(*, task: str, system: str, prompt: str, fake: Callable[[], str], model: str = "strong",
-                        max_tokens: int = 1200) -> str:
+                        max_tokens: int = 4000) -> str:
     m = mode()
     if m == "fake":
         return await _fake_with_latency(fake, task, model)

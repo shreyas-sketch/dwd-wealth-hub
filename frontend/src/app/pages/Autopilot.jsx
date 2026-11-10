@@ -9,6 +9,7 @@ import { inr, venueName } from "@/lib/format";
 import { Button, Card, Chip, Empty, Field, Input, Label, Loadable, MoneyInput, PageHeader, Segmented, Sheet } from "../components/ui";
 import { Gate } from "../components/common";
 import { DcaPlanCard, ScheduleFields, scheduleBody, VenuePicker } from "../components/Dca";
+import { useConfirm } from "../components/Confirm";
 
 const VENUES = ["kucoin", "binance"];
 
@@ -69,9 +70,11 @@ function Balance({ venue }) {
 
 function VenueRow({ v, onLink }) {
   const qc = useQueryClient();
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const unlink = async () => {
-    if (!window.confirm(`Unlink ${venueName(v.venue)}? Autopilots on it will stop.`)) return;
+    if (!(await confirm({ title: `Unlink ${venueName(v.venue)}?`, danger: true, confirmLabel: `Unlink ${venueName(v.venue)}`,
+      body: "Autopilots on this exchange will stop. Your coins stay in your exchange account." }))) return;
     setBusy(true);
     try { await api.delete(`/autopilot/link/${v.venue}`); qc.invalidateQueries({ queryKey: ["autopilot"] }); qc.invalidateQueries({ queryKey: ["portfolio"] }); }
     finally { setBusy(false); }
