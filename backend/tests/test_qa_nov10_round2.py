@@ -77,3 +77,9 @@ async def test_radar_redoes_checks_from_old_rules_or_over_a_day_old(mdb):
         x = (await mdb.radar_items.find_one({"_id": f"trending:cg:{sym}"}))["xray"]
         assert x["label"] == "risky" and "Meme coin" in x["red_flags"] and x["rules"] == XRAY_RULES_VERSION, x
     assert (await mdb.radar_items.find_one({"_id": "trending:cg:BTC"}))["xray"]["red_flags"] == ["fresh"]  # left alone
+
+
+def test_debug_client_ip_shows_caller_their_own_headers(client):
+    d = client.get("/api/auth/debug/client-ip", headers={"x-forwarded-for": "9.9.9.9, 81.2.69.142, 100.64.0.3"}).json()
+    assert d["chosen_ip"] == "81.2.69.142" and d["headers"]["x-forwarded-for"] == "9.9.9.9, 81.2.69.142, 100.64.0.3"
+    assert "x-forwarded-for" in d["header_names"]

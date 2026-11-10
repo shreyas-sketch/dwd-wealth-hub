@@ -107,6 +107,22 @@ def client_ip(request: Request) -> str:
     return ip
 
 
+# TEMPORARY (QA 10 Nov): shows the caller their own request as the server sees it behind Railway, to find which
+# forwarded header holds the visitor's real address. Only the caller's own headers are returned. Remove once
+# client_ip() is fixed.
+_DIAG_HEADERS = ("x-forwarded-for", "x-real-ip", "cf-connecting-ip", "true-client-ip", "forwarded",
+                 "x-envoy-external-address", "x-forwarded-proto", "x-forwarded-host", "x-request-start", "via")
+
+
+@router.get("/debug/client-ip")
+async def debug_client_ip(request: Request):
+    return {"chosen_ip": client_ip(request),
+            "peer": request.client.host if request.client else None,
+            "x_forwarded_for_list": request.headers.getlist("x-forwarded-for"),
+            "headers": {h: request.headers.get(h) for h in _DIAG_HEADERS if request.headers.get(h) is not None},
+            "header_names": sorted({k.lower() for k in request.headers.keys()})}
+
+
 class OtpRequestIn(BaseModel):
     phone: str = Field(..., max_length=20)
     channel: Literal["auto", "sms", "whatsapp"] = "auto"
