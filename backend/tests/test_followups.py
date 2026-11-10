@@ -556,3 +556,13 @@ async def test_failed_sends_have_their_own_brake(mdb):
         except otp_service.OtpError as e:
             codes.append(e.code)
     assert codes[:10] == ["send_failed"] * 10 and codes[10] == "send_failures"
+
+
+def test_pasted_keys_are_cleaned(monkeypatch):
+    from accounts.otp_providers import build_senders, clean_secret
+    monkeypatch.setenv("AISENSY_API_KEY", ' "abc.def" \n')
+    assert clean_secret("AISENSY_API_KEY") == "abc.def"
+    _wa_only_env(monkeypatch, campaign=" 'hub_login_code_' ")
+    monkeypatch.setenv("AISENSY_API_KEY", "  key-with-spaces \n")
+    s = build_senders()
+    assert s.whatsapp.api_key == "key-with-spaces" and s.whatsapp.campaign == "hub_login_code_"
