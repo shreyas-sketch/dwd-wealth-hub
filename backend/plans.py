@@ -192,22 +192,38 @@ async def consume(db, user: dict, feature: str, plan: Optional[str] = None) -> d
     plan = plan or (await effective_plan(db, user))["plan"]
     limit = LIMITS[feature][plan]
     key = f"{uid}:{ist_month_key()}"
-    doc = await db.usage.find_one({"_id": key}) or {}
-    used = int(doc.get(feature, 0))
     if limit == 0:
         await events.track(db, "locked_hit", user_id=uid, props={"feature": feature, "plan": plan})
         raise locked_error(feature, "pro" if LIMITS[feature]["lite"] == 0 else "lite")
     cap = limit if limit is not None else FAIR_USE.get(feature)
-    if cap is not None and used >= cap:
+    got = await _take(db.usage, key, feature, cap, {"user_id": uid, "month": ist_month_key()})
+    if got is None:
+        used = int((await db.usage.find_one({"_id": key}) or {}).get(feature, cap or 0))
         await events.track(db, "limit_hit", user_id=uid, props={"feature": feature, "plan": plan})
         nxt = "pro" if plan == "lite" else "lite" if plan == "free" else None
         raise HTTPException(status_code=402, detail={
-            "code": "limit", "feature": feature, "used": used, "limit": cap, "plan_needed": nxt,
+            "code": "limit", "feature": feature, "used": used, "limit": cap, "plan_needed": nxt, "period": "month",
             "msg": (f"You've used all {cap} {LIMIT_UNITS.get(feature, FEATURE_NAMES[feature] + ' uses')} this month."
                     + (f" The {LABELS[nxt]} gives you more." if nxt else " It resets on the 1st."))})
-    await db.usage.update_one({"_id": key}, {"$inc": {feature: 1},
-                                             "$setOnInsert": {"user_id": uid, "month": ist_month_key()}}, upsert=True)
-    return {"used": used + 1, "limit": limit}
+    return {"used": got, "limit": limit, "period": "month"}
+
+
+async def _take(coll, key: str, field: str, cap: Optional[int], on_insert: dict) -> Optional[int]:
+    """Add one use in a single atomic step and return the new count, or None if the cap is already reached.
+    Reading the count and then adding to it let two requests at the same moment both take the last use."""
+    from pymongo import ReturnDocument
+    from pymongo.errors import DuplicateKeyError
+    try:
+        await coll.update_one({"_id": key}, {"$setOnInsert": on_insert}, upsert=True)
+    except DuplicateKeyError:          # another request created it at the same moment
+        pass
+    flt: dict = {"_id": key}
+    if cap is not None:
+        if cap <= 0:
+            return None
+        flt["$or"] = [{field: {"$lt": cap}}, {field: {"$exists": False}}]
+    doc = await coll.find_one_and_update(flt, {"$inc": {field: 1}}, return_document=ReturnDocument.AFTER)
+    return int(doc[field]) if doc else None
 
 
 async def refund(db, user: dict, feature: str) -> None:
@@ -218,12 +234,11 @@ async def anon_consume(db, anon_key: str, feature: str, per_day: int) -> dict:
     from growth.clock import IST
     day = utcnow().astimezone(IST).date().isoformat()
     key = f"{anon_key}:{feature}:{day}"
-    doc = await db.anon_usage.find_one({"_id": key}) or {}
-    used = int(doc.get("n", 0))
-    if used >= per_day:
+    got = await _take(db.anon_usage, key, "n", per_day, {"at": utcnow()})
+    if got is None:
+        used = int((await db.anon_usage.find_one({"_id": key}) or {}).get("n", per_day))
         # 402 "limit" (contract); `signup: true` tells the public page to offer the free account.
         raise HTTPException(status_code=402, detail={
             "code": "limit", "signup": True, "plan_needed": "free", "feature": feature, "used": used, "limit": per_day,
-            "msg": "Create an account to keep checking. It is free and takes 30 seconds."})
-    await db.anon_usage.update_one({"_id": key}, {"$inc": {"n": 1}, "$setOnInsert": {"at": utcnow()}}, upsert=True)
-    return {"used": used + 1, "limit": per_day}
+            "period": "day", "msg": "Create an account to keep checking. It is free and takes 30 seconds."})
+    return {"used": got, "limit": per_day, "period": "day"}

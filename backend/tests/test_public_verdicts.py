@@ -62,7 +62,7 @@ def test_forecast_debate_metered(client):
     qa_login(client, plan="lite")
     f = client.post("/api/verdicts/forecast", json={"symbol": "BTC", "horizon_days": 7}).json()
     assert len(f["path"]) == 7 and f["low_usd"] < f["expected_price_usd"] < f["high_usd"] and f["model"] == "statistical"
-    assert f["usage"] == {"used": 1, "limit": 10}
+    assert f["usage"] == {"used": 1, "limit": 10, "period": "month"}
     d = client.post("/api/verdicts/debate", json={"symbol": "ETH"}).json()
     assert len(d["bull"]) == 3 and len(d["bear"]) == 3 and d["chair"]["verdict"] in ("Bullish", "Neutral", "Bearish")
 

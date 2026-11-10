@@ -19,7 +19,7 @@ export default function GateSheet() {
   return (
     <Sheet open onClose={() => setGate(null)} title={limit ? "Monthly limit reached" : "Upgrade to unlock"}>
       <LockCard feature={gate.feature} planNeeded={gate.plan_needed} kind={limit ? "limit" : "locked"}
-        used={gate.used} limit={gate.limit} msg={gate.msg} onAction={() => setGate(null)} />
+        used={gate.used} limit={gate.limit} period={gate.period} msg={gate.msg} onAction={() => setGate(null)} />
     </Sheet>
   );
 }

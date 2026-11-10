@@ -67,6 +67,7 @@ EVENTS: dict[str, str] = {
     "dca_plan_saved": "Autopilot plan created or changed",
     "dca_bought": "Autopilot buy executed",
     "dca_failed": "Autopilot buy failed (props.reason)",
+    "dca_paused": "Autopilot plan paused because the account or plan no longer allows it",
     # money
     "upgrade_viewed": "Upgrade prompt or plans page shown (props.surface) — client",
     "checkout_opened": "Checkout opened (props.plan) — client",

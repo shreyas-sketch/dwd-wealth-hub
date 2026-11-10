@@ -42,7 +42,10 @@ def create_app(db=None, *, start_jobs: bool | None = None, seed: bool | None = N
         db = AsyncIOMotorClient(settings.mongo_url, tz_aware=True)[settings.db_name]
     state.set_db(db)
 
-    app = FastAPI(title=f"{settings.brand_name} API", docs_url="/api/docs", openapi_url="/api/openapi.json")
+    # The API docs list every endpoint and field: on in QA, off in production unless ENABLE_API_DOCS=true.
+    docs = settings.qa_mode or (os.environ.get("ENABLE_API_DOCS") or "").strip().lower() in ("1", "true", "yes")
+    app = FastAPI(title=f"{settings.brand_name} API", docs_url="/api/docs" if docs else None, redoc_url=None,
+                  openapi_url="/api/openapi.json" if docs else None)
     origins = [o.strip() for o in (os.environ.get("CORS_ORIGINS") or "").split(",") if o.strip()]
     if origins:
         app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True,

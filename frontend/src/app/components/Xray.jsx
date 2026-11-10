@@ -156,7 +156,7 @@ export default function XrayBox({ onDone, autoFocus = false }) {
       </form>
       {state.status === "error" && <p className="text-sm text-bz-miss" role="alert">{state.msg}</p>}
       {state.status === "limit" && (user ? (
-        <LockCard feature="xray" kind="limit" planNeeded={state.detail.plan_needed} used={state.detail.used} limit={state.detail.limit} msg={state.detail.msg} />
+        <LockCard feature="xray" kind="limit" planNeeded={state.detail.plan_needed} used={state.detail.used} limit={state.detail.limit} period={state.detail.period} msg={state.detail.msg} />
       ) : (
         <Card className="border-bz-gold" data-testid="xray-anon-limit">
           <p className="font-bzdisplay text-[22px] font-bold leading-tight">You've used today's free check.</p>

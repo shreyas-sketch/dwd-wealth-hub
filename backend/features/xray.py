@@ -90,9 +90,9 @@ ODD_TLDS = {"xyz", "top", "click", "live", "site", "online", "shop", "icu", "buz
 SHORTENERS = {"bit.ly", "tinyurl.com", "t.co", "goo.gl", "cutt.ly", "rb.gy", "is.gd", "t.me", "wa.me", "chat.whatsapp.com"}
 LINK_WORDS = ("airdrop", "claim", "giveaway", "double", "bonus", "reward", "connect-wallet", "walletconnect",
               "verify", "validate", "support", "recover", "unlock", "kyc", "free-crypto", "doubler", "profit",
-              "earn", "mining", "payout", "withdraw", "wallet-sync", "presale")
+              "earn", "mining", "payout", "withdraw", "wallet-sync", "presale", "restore", "seed-phrase", "rectify")
 # Bump when the X-Ray rules change, so saved results (the radar) are checked again under the new rules.
-XRAY_RULES_VERSION = 2
+XRAY_RULES_VERSION = 3
 
 URL_RE = re.compile(r"(https?://[^\s]+|(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:/[^\s]*)?)", re.I)
 EVM_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")

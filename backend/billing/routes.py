@@ -10,12 +10,14 @@ POST /api/billing/razorpay/webhook      → subscription.activated / charged / c
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pymongo.errors import DuplicateKeyError
 from pydantic import BaseModel, Field
 
 import plans
@@ -144,10 +146,26 @@ async def webhook(request: Request):
         raise HTTPException(status_code=400, detail={"code": "bad_signature", "msg": "bad signature"})
     ev = json.loads(raw or b"{}")
     name = ev.get("event", "")
+    # Razorpay retries a webhook until it gets a 2xx and can send the same event twice. Handle each event id once
+    # (the header, else a hash of the body), so a repeat can't re-activate a subscription or log a payment twice.
+    eid = request.headers.get("X-Razorpay-Event-Id") or "sha:" + hashlib.sha256(raw).hexdigest()
+    try:
+        await db().billing_events.insert_one({"_id": eid, "event": name, "at": utcnow()})
+    except DuplicateKeyError:
+        return {"ok": True, "duplicate": True}
+    try:
+        await _handle_event(ev, name)
+    except Exception:
+        await db().billing_events.delete_one({"_id": eid})   # let Razorpay's retry run it again
+        raise
+    return {"ok": True}
+
+
+async def _handle_event(ev: dict, name: str) -> None:
     sub = ((ev.get("payload") or {}).get("subscription") or {}).get("entity") or {}
     sid = sub.get("id")
     if not sid:
-        return {"ok": True}
+        return
     if name in ("subscription.activated", "subscription.charged", "subscription.resumed"):
         end = sub.get("current_end")
         end_dt = datetime.fromtimestamp(end, tz=timezone.utc) if end else utcnow() + timedelta(days=31)
@@ -156,4 +174,3 @@ async def webhook(request: Request):
                         amount_inr=(pay.get("amount") or 0) / 100 if pay else None)
     elif name in ("subscription.cancelled", "subscription.halted", "subscription.completed", "subscription.paused"):
         await db().subscriptions.update_one({"_id": sid}, {"$set": {"status": name.split(".")[1], "updated_at": utcnow()}})
-    return {"ok": True}

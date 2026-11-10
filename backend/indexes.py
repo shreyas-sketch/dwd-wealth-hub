@@ -45,6 +45,7 @@ INDEXES = [
     ("xray_checks", [("user_id", 1), ("at", -1)], {}),
     ("ask_threads", [("user_id", 1), ("updated_at", -1)], {}),
     ("anon_usage", [("at", 1)], {"expireAfterSeconds": 3 * 86400}),
+    ("billing_events", [("at", 1)], {"expireAfterSeconds": 90 * 86400}),   # webhook de-duplication
 ]
 
 

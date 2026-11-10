@@ -251,8 +251,13 @@ async def seed_admin(db) -> None:
         return
     existing = await db.users.find_one({"email": email})
     if existing:
+        # Never promote an existing member to admin because their email matches ADMIN_EMAIL: anyone who set that
+        # email on their account first would become admin on the next deploy. Only the staff account this
+        # function created (role admin) gets a password filled in.
         if existing.get("role") != "admin":
-            await db.users.update_one({"_id": existing["_id"]}, {"$set": {"role": "admin"}})
+            log.error("ADMIN_EMAIL %s belongs to a non-admin account; not promoting it. Use another ADMIN_EMAIL or "
+                      "grant admin by hand.", email)
+            return
         if not existing.get("password_hash"):
             await db.users.update_one({"_id": existing["_id"]}, {"$set": {"password_hash": hash_password(password)}})
         return

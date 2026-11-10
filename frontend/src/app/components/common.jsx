@@ -47,15 +47,16 @@ export function CoinBadge({ symbol, size = 36 }) {
   );
 }
 
-// "You've used 2 of 30 this month" from {used, limit}.
+// "You've used 2 of 30 this month" from {used, limit, period}. Logged-out X-Ray resets daily: period "day" → "today".
+const periodWord = (p) => (p === "day" ? "today" : "this month");
 // `what` is the plural noun ("checks", "chart reads"); one use reads "1 check" (QA 10 Nov: "1 checks used").
 export function UsageLine({ usage, what = "checks", className = "" }) {
   if (!usage || usage.used == null) return null;
   const n = Number(usage.used);
   const noun = n === 1 ? what.replace(/s$/, "") : what;
   const text = usage.limit == null
-    ? `${n.toLocaleString("en-IN")} ${noun} used this month. Unlimited on your plan.`
-    : `You've used ${n.toLocaleString("en-IN")} of ${usage.limit} ${what} this month.`;
+    ? `${n.toLocaleString("en-IN")} ${noun} used ${periodWord(usage.period)}. Unlimited on your plan.`
+    : `You've used ${n.toLocaleString("en-IN")} of ${usage.limit} ${what} ${periodWord(usage.period)}.`;
   return <p className={`text-[13px] text-bz-muted ${className}`}>{text}</p>;
 }
 
@@ -66,7 +67,7 @@ export function planNeededLabel(p) {
 // Shown on a locked page or after a 403/402 from the API.
 //   kind "locked": what the feature does + "Included in the ₹2,000 plan" + Upgrade
 //   kind "limit":  "You've used N of M this month" + Upgrade
-export function LockCard({ feature, planNeeded, kind = "locked", used, limit, msg, onAction }) {
+export function LockCard({ feature, planNeeded, kind = "locked", used, limit, period, msg, onAction }) {
   const { user } = useAuth();
   const info = featureInfo(feature);
   const need = planNeeded || info.plan || "lite";
@@ -79,7 +80,7 @@ export function LockCard({ feature, planNeeded, kind = "locked", used, limit, ms
           <p className="font-bzdisplay text-[22px] font-bold leading-tight">{info.name}</p>
           {isLimit ? (
             <p className="text-[15px] mt-1.5">
-              {used != null && limit != null ? `You've used ${used} of ${limit} this month.` : msg || "You've reached this month's limit."}
+              {used != null && limit != null ? `You've used ${used} of ${limit} ${periodWord(period)}.` : msg || (period === "day" ? "You've reached today's limit." : "You've reached this month's limit.")}
               {" "}More with the {planNeededLabel(need)}.
             </p>
           ) : (

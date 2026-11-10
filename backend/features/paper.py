@@ -21,8 +21,10 @@ from util import iso
 
 router = APIRouter(tags=["paper"])
 START_INR = 100_000.0
-TRADABLE = {"BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "TRX", "LINK", "AVAX", "SUI", "TON", "DOT", "LTC",
-            "NEAR", "SHIB", "PEPE", "WIF", "BONK", "FLOKI"}
+# Coins Paper Money can trade, in the order the trade form lists them (sent to the form as `tradable`).
+TRADABLE_ORDER = ("BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "ADA", "TRX", "LINK", "AVAX", "SUI", "TON", "DOT", "LTC",
+                  "NEAR", "SHIB", "PEPE", "WIF", "BONK", "FLOKI")
+TRADABLE = set(TRADABLE_ORDER)
 
 
 class TradeIn(BaseModel):
@@ -49,7 +51,8 @@ async def view(user: dict, doc: Optional[dict] = None) -> dict:
     can_trade = plans.plan_allows((await plans.effective_plan(db(), user))["plan"], "paper_trade")
     if not doc:
         return {"start_inr": START_INR, "cash_inr": START_INR, "value_inr": START_INR, "pnl_inr": 0.0, "pnl_pct": 0.0,
-                "positions": [], "history": [], "plan_id": None, "can_trade": can_trade, "started_at": None}
+                "positions": [], "history": [], "plan_id": None, "can_trade": can_trade, "started_at": None,
+                "tradable": list(TRADABLE_ORDER)}
     pos = doc.get("positions") or {}
     px = await _prices_inr(list(pos))
     rows, total = [], doc["cash_inr"]
@@ -68,7 +71,7 @@ async def view(user: dict, doc: Optional[dict] = None) -> dict:
     start = doc.get("start_inr", START_INR)
     return {"start_inr": start, "cash_inr": round(doc["cash_inr"], 2), "value_inr": round(total, 2),
             "pnl_inr": round(total - start, 2), "pnl_pct": round((total / start - 1) * 100, 2),
-            "positions": rows, "history": hist, "plan_id": doc.get("plan_id"), "can_trade": can_trade,
+            "positions": rows, "history": hist, "plan_id": doc.get("plan_id"), "can_trade": can_trade, "tradable": list(TRADABLE_ORDER),
             "started_at": iso(doc.get("started_at")), "plan_drift": await _plan_drift(uid, doc)}
 
 
