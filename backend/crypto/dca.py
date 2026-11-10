@@ -10,6 +10,7 @@ balance is checked: short → skip, note the error and alert the user to top up.
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
+from typing import Optional
 
 from growth import events
 from growth.clock import IST, as_utc
@@ -75,6 +76,31 @@ async def execute(db, user_id: str, venue: str, amounts_inr: dict[str, float], *
     return out
 
 
+async def still_allowed(db, p: dict) -> Optional[str]:
+    """None if this plan may still buy; else why not. Checked before every real buy: a plan saved on the ₹5,000 plan
+    or trial must not keep buying after a downgrade, a trial ending or the account being revoked."""
+    import plans
+    from bson import ObjectId
+    uid = p.get("user_id")
+    try:
+        user = await db.users.find_one({"_id": ObjectId(uid)}) if ObjectId.is_valid(uid) else None
+    except Exception:  # noqa: BLE001
+        user = None
+    user = user or await db.users.find_one({"_id": uid})
+    if not user or (user.get("status") or "active") == "revoked":
+        return "This account is disabled, so Autopilot is paused."
+    plan = (await plans.effective_plan(db, user))["plan"]
+    allowed = plans.AUTOPILOT.get(plan) or {"coins": [], "frequencies": []}
+    if not plans.plan_allows(plan, "autopilot") or p.get("frequency") not in allowed["frequencies"]:
+        return "Your plan no longer includes this Autopilot schedule, so it is paused. Upgrade to turn it back on."
+    if p.get("kind") == "basket":
+        if not plans.plan_allows(plan, "baskets"):
+            return "Basket Autopilot is in the ₹5,000 plan, so it is paused. Upgrade to turn it back on."
+    elif str(p.get("coin") or "").upper() not in allowed["coins"]:
+        return f"Your plan no longer includes Autopilot for {p.get('coin')}, so it is paused. Upgrade to turn it back on."
+    return None
+
+
 async def run_job(ctx) -> dict:
     from core.flags import is_on
     from notify.service import alert
@@ -84,13 +110,23 @@ async def run_job(ctx) -> dict:
     import asyncio
     import os
     db, now = ctx.db, ctx.now
-    tally = {"bought": 0, "failed": 0}
+    tally = {"bought": 0, "failed": 0, "paused": 0}
     # Each member's buy runs on their own exchange key, so several can run at once (exchange rate limits are
     # per key). Sequential, 10,000 plans × ~0.3 s exchange round trip would take ~50 minutes.
     sem = asyncio.Semaphore(int(os.environ.get("AUTOPILOT_CONCURRENCY", "10") or 10))
 
     async def one(p: dict) -> None:
         async with sem:
+            why = await still_allowed(db, p)
+            if why:
+                res = await db.dca_plans.update_one({"_id": p["_id"], "status": "active"},
+                                                    {"$set": {"status": "paused", "last_error": why, "last_error_at": now}})
+                if res.modified_count:
+                    tally["paused"] += 1
+                    await events.track(db, "dca_paused", user_id=p["user_id"], props={"reason": "plan"})
+                    await alert(db, p["user_id"], "autopilot", "Autopilot paused", why, link="/app/autopilot",
+                                dedupe=f"app:{p['_id']}:{now.date().isoformat()}")
+                return
             nxt = next_run(p, now)
             claim = await db.dca_plans.update_one({"_id": p["_id"], "next_at": p["next_at"]}, {"$set": {"next_at": nxt}})
             if claim.modified_count != 1:

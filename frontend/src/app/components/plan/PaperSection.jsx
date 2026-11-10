@@ -13,7 +13,7 @@ import { Button, Card, Empty, ErrorCard, Field, Label, MoneyInput, Segmented, Se
 import { Move } from "../common";
 import { useConfirm } from "../Confirm";
 
-const COINS = ["BTC", "ETH", "SOL", "XRP"];
+const COINS = ["BTC", "ETH", "SOL", "XRP"];   // fallback; the server sends the full list as `tradable`
 const lakhAxis = (v) => (Math.abs(v) >= 1e5 ? `₹${(v / 1e5).toFixed(2)} L` : `₹${Math.round(v / 1000)}K`);
 
 export function usePaper() {
@@ -47,7 +47,7 @@ function HistoryChart({ history, start }) {
 
 function TradeForm({ paper, onPaper }) {
   const held = (paper.positions || []).map((p) => p.symbol);
-  const symbols = Array.from(new Set([...COINS, ...held]));
+  const symbols = Array.from(new Set([...(paper.tradable?.length ? paper.tradable : COINS), ...held]));
   const [f, setF] = useState({ symbol: "BTC", side: "buy", amount_inr: 5000 });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
