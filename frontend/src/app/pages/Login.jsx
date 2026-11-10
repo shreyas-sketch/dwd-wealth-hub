@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { captureAttribution } from "@/lib/attribution";
 import AuthShell, { ReasonNotice } from "../components/AuthShell";
 import OtpLogin from "../components/OtpLogin";
+import { newAccountLine, useTrialDays } from "@/lib/trial";
 
 function safeNext(n) {
   return n && n.startsWith("/") && !n.startsWith("//") ? n : "/app";
@@ -12,6 +13,7 @@ function safeNext(n) {
 
 export default function Login() {
   const { user } = useAuth();
+  const trialDays = useTrialDays();
   const nav = useNavigate();
   const loc = useLocation();
   const next = safeNext(new URLSearchParams(loc.search).get("next"));
@@ -28,7 +30,7 @@ export default function Login() {
     <AuthShell
       eyebrow={code ? "Verify" : "Log in or sign up"}
       title={code ? "Enter the code." : "Log in with your mobile number."}
-      subtitle={code ? `Sent by ${step.ch?.channel === "whatsapp" ? "WhatsApp" : "SMS"} to ${step.ch?.sent_to || "your number"}.` : "We'll send a 6-digit code. New numbers get a free account."}
+      subtitle={code ? `Sent by ${step.ch?.channel === "whatsapp" ? "WhatsApp" : "SMS"} to ${step.ch?.sent_to || "your number"}.` : `We'll send a 6-digit code. ${newAccountLine(trialDays)}`}
       footer={legal}
       notice={code ? null : <ReasonNotice search={loc.search} />}
     >

@@ -281,3 +281,67 @@ async def test_verdict_rerun_replaces_the_whole_days_list(mdb):
     assert r["coins"] == 10
     assert await mdb.verdicts.count_documents({"date": day, "symbol": "OLDCOIN"}) == 0
     assert await mdb.verdicts.count_documents({"date": day}) == 10
+
+
+# ---------------------------------------------------------------- logged-out X-Ray limit can't be reset ----
+def test_anon_xray_cleared_or_forged_cookie_gets_no_fresh_check(client, monkeypatch):
+    monkeypatch.setenv("ANON_XRAY_NOCOOKIE_PER_IP_DAY", "3")
+    client.post("/api/events", json={"name": "page_view", "props": {"path": "/"}})     # the landing page sets the cookie
+    assert client.post("/api/xray", json={"query": "BTC"}).status_code == 200
+    assert client.post("/api/xray", json={"query": "ETH"}).status_code == 402         # 1 a day
+    codes = []
+    for i in range(5):                                                                   # clear or forge the cookie
+        client.cookies.clear()
+        client.cookies.set("cz_anon", f"forged{i:04d}abcdef")
+        codes.append(client.post("/api/xray", json={"query": "SOL"}).status_code)
+    assert codes == [200, 200, 200, 402, 402]                                           # only the small no-cookie allowance
+
+
+def test_anon_cookie_is_signed():
+    from starlette.requests import Request
+
+    from growth import events
+
+    def req(v):
+        return Request({"type": "http", "headers": [(b"cookie", f"cz_anon={v}".encode())]})
+    good = "a" * 32
+    assert events.anon_id_from(req(f"{good}.{events._sign(good)}")) == good
+    assert events.anon_id_from(req(good)) is None
+    assert events.anon_id_from(req(f"{good}.0000000000000000")) is None
+
+
+async def test_chair_sentence_reworded(mdb):
+    import maintenance
+    chair = f"Bearish with 59% confidence. {maintenance.OLD_CLAIM}"
+    await mdb.verdicts.insert_one({"_id": "2026-11-10:TRX", "symbol": "TRX", "bull": ["x"], "chair": chair})
+    assert (await maintenance.run_data_fixes(mdb))["reword_exchange_claim"] == 1
+    assert (await mdb.verdicts.find_one({"_id": "2026-11-10:TRX"}))["chair"].endswith(maintenance.NEW_CLAIM)
+
+
+# ---------------------------------------------------------------- X-Ray: look-alikes and meme coins ----
+@pytest.mark.parametrize("url", ["blnance-bonus.com", "https://blnance.com/login", "my-kucoin-login.com",
+                                 "kuc0in.com", "binance-support.xyz", "trust-wallet-help.com"])
+def test_lookalike_sites_are_likely_scams(url):
+    from features.xray import link_flags, score_of
+    red, green = link_flags(url)
+    assert score_of(red, green)[1] == "likely_scam", (url, red)
+
+
+@pytest.mark.parametrize("url", ["binance.com", "https://www.kucoin.com/trade", "coingecko.com", "finance-news.com",
+                                 "balance-check.com"])
+def test_real_sites_and_ordinary_words_are_not_called_fakes(url):
+    from features.xray import link_flags, score_of
+    red, green = link_flags(url)
+    assert score_of(red, green)[1] != "likely_scam", (url, red)
+
+
+@pytest.mark.parametrize("q", ["PEPE", "DOGE", "SHIB"])
+def test_meme_coins_never_look_safe(client, q):
+    qa_login(client)
+    d = client.post("/api/xray", json={"query": q}).json()
+    assert d["label"] != "safe" and any(f["title"] == "Meme coin" for f in d["red_flags"]), d["label"]
+
+
+def test_bitcoin_still_looks_safe(client):
+    qa_login(client)
+    assert client.post("/api/xray", json={"query": "BTC"}).json()["label"] == "safe"

@@ -140,19 +140,33 @@ async def identify(db, anon_id: Optional[str], user_id: str) -> int:
     return res.modified_count
 
 
+def _sign(anon: str) -> str:
+    import hashlib
+    import hmac
+    import os
+    key = (os.environ.get("JWT_SECRET") or "dev").encode()
+    return hmac.new(key, f"anon:{anon}".encode(), hashlib.sha256).hexdigest()[:16]
+
+
 def anon_id_from(request: Request) -> Optional[str]:
-    v = request.cookies.get(ANON_COOKIE)
-    return v if v and _ANON_RE.match(v) else None
+    """The visitor id from a cookie this server issued ("<id>.<signature>"). A missing, unsigned or forged cookie
+    returns None, so a script can't get a fresh anonymous allowance by sending made-up ids (QA 10 Nov)."""
+    import hmac
+    v = request.cookies.get(ANON_COOKIE) or ""
+    anon, _, sig = v.partition(".")
+    if not anon or not _ANON_RE.match(anon) or not sig or not hmac.compare_digest(sig, _sign(anon)):
+        return None
+    return anon
 
 
 def ensure_anon_cookie(request: Request, response: Response) -> str:
-    """Give every visitor a first-party anonymous id (1 year)."""
+    """Give every visitor a first-party anonymous id (1 year), signed by the server."""
     from core.settings import settings
     existing = anon_id_from(request)
     if existing:
         return existing
     anon = uuid.uuid4().hex
-    response.set_cookie(ANON_COOKIE, anon, max_age=365 * 86400, httponly=True,
+    response.set_cookie(ANON_COOKIE, f"{anon}.{_sign(anon)}", max_age=365 * 86400, httponly=True,
                         secure=settings.cookie_secure, samesite="lax", path="/")
     return anon
 
