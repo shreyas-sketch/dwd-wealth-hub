@@ -83,5 +83,6 @@ def build_whatsapp():
     if mode == "fake":
         return FakeChannel()
     if mode == "live":
-        return AiSensyWhatsApp(os.environ["AISENSY_API_KEY"])
+        from accounts.otp_providers import clean_secret
+        return AiSensyWhatsApp(clean_secret("AISENSY_API_KEY"))
     return None
